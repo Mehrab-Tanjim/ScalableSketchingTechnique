@@ -215,11 +215,14 @@ public class FileFormat {
         	  BufferedReader br = new BufferedReader(new FileReader(file));
         	  String outputFileName=outputFolderPath+ File.separator + file.getName() + ".seq";
 	          writer=SequenceFile.createWriter(fs, conf, new Path(outputFileName), IntWritable.class, VectorWritable.class, CompressionType.BLOCK);
+	          int count=1;
 	          while ((thisLine = br.readLine()) != null) { // while loop begins here   		   
-	        	  String [] splitted = thisLine.split(",");
-	        	  int rowID=Integer.parseInt(splitted[0]);
-	        	  int colID=Integer.parseInt(splitted[1]);
-	        	  double element=Double.parseDouble(splitted[2]);
+	        	  String [] splitted = thisLine.split("\\s+");
+	        	  int rowID=Integer.parseInt(splitted[0])-11;
+	        	  int colID=Integer.parseInt(splitted[1])-11;
+	        	  double element=1;//Double.parseDouble(splitted[2]);
+	        	  if(count==5000) break;//take first 5000 count line number
+	        	  if(colID>5000) continue;//take 5000 columns
 	        	  if(first)
 	        	  {
 	        		  first=false;
@@ -230,6 +233,7 @@ public class FileFormat {
 	        		  key.set(prevRowID);
 	        		  value.set(vector);
 	            	  //System.out.println(vector);
+	        		  count++;
 	            	  writer.append(key,value);//write last row
 	            	  vector = new SequentialAccessSparseVector(cardinality);
 	        	  }

@@ -747,7 +747,7 @@ public class SparkPCA implements Serializable {
 		double prevError = Double.MAX_VALUE;
 		final float threshold = 0.00001f;// not changing much
 		final int firstRound = round;
-		double target_error = 0.05; // 95% accuracy
+		double target_error = 0.01; // 95% accuracy
 
 		for (; (round < maxIterations && relChangeInObjective > threshold && prevError > target_error); round++) {
 
