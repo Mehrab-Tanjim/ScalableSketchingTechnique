@@ -951,6 +951,7 @@ public class SparkPCA implements Serializable {
 
 			if (!CALCULATE_ERR_ATTHEEND) {
 				// log.info("Computing the error at round " + round + " ...");
+				startTime = System.currentTimeMillis();
 				System.out.println("Computing the error at round " + round + " ...");
 
 				V =	new org.apache.mahout.math.SingularValueDecomposition(centralC).getU();
@@ -969,15 +970,18 @@ public class SparkPCA implements Serializable {
 							throws Exception {
 						// TODO Auto-generated method stub
 						double[] y = new double[nCols];
-						int[] indices = ((SparseVector) arg0).indices();
+						double[] values=arg0.toArray();//How does this save time??
+						
+						int[] indices = ((SparseVector) arg0).indices();						
 						int index;
 						double value = 0;
+						
 						for (int j = 0; j < (nCols); j++) {
 							for (int i = 0; i < indices.length; i++) {
 								index = indices[i];
-								value += arg0.apply(index) * brVVt.value().getQuick(index, j);
+								value +=  values[index]*brVVt.value().getQuick(index, j);
 							}
-							y[j] = arg0.apply(j)-value - br_ym_mahout.value().getQuick(j)+brMuVVt.value().getQuick(j);
+							y[j] = values[j]-value - br_ym_mahout.value().getQuick(j)+brMuVVt.value().getQuick(j);
 							value = 0;
 						}
 
@@ -989,10 +993,13 @@ public class SparkPCA implements Serializable {
 				spectral_error = new RowMatrix(recon_error.rdd()).computeSVD(nPCs, false, rCond).s().apply(0);
 				error = (spectral_error - k_plus_one_singular_value) / k_plus_one_singular_value;
 
+				endTime = System.currentTimeMillis();
+				totalTime = endTime - startTime;
+				
 				stat.errorList.add((Double) error);
 				// log.info("... end of computing the error at round " + round +
 				// " And error=" + error);
-				System.out.println("... end of computing the error at round " + round + " And error=" + error);
+				System.out.println("... end of computing the error at round " + round + "Time"+(double) totalTime / 1000.0+" And error=" + error);
 				prevError = error;
 			}
 
