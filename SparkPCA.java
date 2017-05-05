@@ -557,13 +557,15 @@ public class SparkPCA implements Serializable {
 					public org.apache.spark.mllib.linalg.Vector call(org.apache.spark.mllib.linalg.Vector arg0)
 							throws Exception {
 						double[] y = new double[nPCs + subsample];
+						double[] values =arg0.toArray();//TODO check does it really save time?!?!
+						
 						int[] indices = ((SparseVector) arg0).indices();
 						int index;
 						double value = 0;
 						for (int j = 0; j < (nPCs + subsample); j++) {
 							for (int i = 0; i < indices.length; i++) {
 								index = indices[i];
-								value += arg0.apply(index) * seed.value().getQuick(index, j);
+								value += values[index] * seed.value().getQuick(index, j);
 							}
 							y[j] = value - brSeedMu.value().getQuick(j);
 							value = 0;
@@ -595,25 +597,25 @@ public class SparkPCA implements Serializable {
 							throws Exception {
 
 						Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> pair;
-						org.apache.spark.mllib.linalg.Vector A;
-						org.apache.spark.mllib.linalg.Vector Q;
+						double[] A =null;
+						double[] Q =null;
 						while (arg0.hasNext()) {
 							// lol mistake
 							pair = arg0.next();
-							A = pair._2;
-							Q = pair._1;
+							A = pair._2.toArray();//TODO check does it really save time, and why?!?!?!
+							Q = pair._1.toArray();
 
-							int row = Q.size();
-							int[] indices = ((SparseVector) A).indices();
+							int row = Q.length;
+							int[] indices = ((SparseVector) pair._2).indices();
 							int index;
 							for (int j = 0; j < indices.length; j++) {
 								for (int i = 0; i < row; i++) {
 									index = indices[j];
-									sumQtAPartial[row * index + i] += Q.apply(i) * A.apply(index);
+									sumQtAPartial[row * index + i] += Q[i] * A[index];
 								}
 							}
 							for (int i = 0; i < row; i++) {
-								sumQPartial[i] += Q.apply(i);
+								sumQPartial[i] += Q[i];
 							}
 
 						}
