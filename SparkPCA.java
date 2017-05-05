@@ -327,36 +327,33 @@ public class SparkPCA implements Serializable {
 		final Accumulator<double[]> sumQ = sc.accumulator(new double[nPCs+subsample], new VectorAccumulatorParam());
 		final Accumulator<double[]> sumQtA = sc.accumulator(new double[(nPCs+subsample)*nCols], new VectorAccumulatorParam());
 		
-		final double[] sumQPartial =  new double[nPCs+subsample];
-		final double[] sumQtAPartial= new double[(nPCs+subsample)*nCols];
-		
-		
-		QnA.foreachPartition(new VoidFunction<Iterator<Tuple2<org.apache.spark.mllib.linalg.Vector,org.apache.spark.mllib.linalg.Vector>>>() {
+		QnA.foreach(
+				new VoidFunction<Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>>() {
 
-			@Override
-			public void call(Iterator<Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>> arg0) throws Exception {
-				org.apache.spark.mllib.linalg.Vector A;
-				org.apache.spark.mllib.linalg.Vector Q;
-				while(arg0.hasNext()){
-					A = arg0.next()._2;
-					Q = arg0.next()._1;
-					
-					int row = Q.size();
-					int [] indices=((SparseVector)A).indices();
-					int index;
-					for (int j = 0; j < indices.length;  j++) {
-						for (int i = 0; i < row; i++) {
-							index=indices[j];
-							sumQtAPartial[row *index + i]+=Q.apply(i) * A.apply(index);
-							sumQPartial[i]+=Q.apply(i);
+					public void call(
+							Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> arg0)
+							throws Exception {
+
+						org.apache.spark.mllib.linalg.Vector A = arg0._2;
+						org.apache.spark.mllib.linalg.Vector Q = arg0._1;
+						
+						sumQ.add(Q.toArray());
+						
+						int col = A.size();
+						int row = Q.size();
+						double[] partialQtA = new double[row*col];
+						int [] indices=((SparseVector)A).indices();
+						int index;
+						for (int j = 0; j < indices.length;  j++) {
+							for (int i = 0; i < row; i++) {
+								index=indices[j];
+								partialQtA[row *index + i]=Q.apply(i) * A.apply(index);
+							}
 						}
-					}					
-				}	
-				sumQ.add(sumQPartial);
-				sumQtA.add(sumQtAPartial);
-			}
-			
-		});
+						
+						sumQtA.add(partialQtA);
+					}
+				});
 
 		
 		org.apache.spark.mllib.linalg.Matrix QtA = org.apache.spark.mllib.linalg.Matrices.dense(nPCs+subsample, nCols, sumQtA.value());
