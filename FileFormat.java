@@ -221,8 +221,8 @@ public class FileFormat {
 	        	  int rowID=Integer.parseInt(splitted[0])-11;
 	        	  int colID=Integer.parseInt(splitted[1])-11;
 	        	  double element=1;//Double.parseDouble(splitted[2]);
-	        	  if(count==5000) break;//take first 5000 count line number
-	        	  if(colID>5000) continue;//take 5000 columns
+	        	  if(count==1000) break;//take first 5000 count line number
+	        	  if(colID>1000) continue;//take 5000 columns
 	        	  if(first)
 	        	  {
 	        		  first=false;

@@ -214,6 +214,7 @@ public class SparkPCA implements Serializable {
 																							// for
 																							// building
 		conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer");
+		conf.set("spark.kryoserializer.buffer.max","128m");
 		JavaSparkContext sc = new JavaSparkContext(conf);
 
 		// compute principal components
@@ -295,12 +296,13 @@ public class SparkPCA implements Serializable {
 
 		// Read from sequence file
 		JavaPairRDD<IntWritable, VectorWritable> seqVectors = sc.sequenceFile(inputPath, IntWritable.class,
-				VectorWritable.class);
-
+				VectorWritable.class,nClusters);
+		
 		// TODO for dense matrix modify here
 
 		// Convert sequence file to RDD<org.apache.spark.mllib.linalg.Vector> of
 		// Vectors
+		
 		JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors = seqVectors
 				.map(new Function<Tuple2<IntWritable, VectorWritable>, org.apache.spark.mllib.linalg.Vector>() {
 
@@ -320,10 +322,10 @@ public class SparkPCA implements Serializable {
 						org.apache.spark.mllib.linalg.Vector sparkVector = Vectors.sparse(nCols, tupleList);
 						return sparkVector;
 					}
-				}).repartition(nClusters).persist(StorageLevel.MEMORY_ONLY_SER()); // TODO
+				}).persist(StorageLevel.MEMORY_ONLY_SER()); // TODO
 																					// change
-																					// later;
-
+																				// later;
+		
 		// 1. Mean Job : This job calculates the mean and span of the columns of
 		// the input RDD<org.apache.spark.mllib.linalg.Vector>
 		final Accumulator<double[]> matrixAccumY = sc.accumulator(new double[nCols], new VectorAccumulatorParam());
