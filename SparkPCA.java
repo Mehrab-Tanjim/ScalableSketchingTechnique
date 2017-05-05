@@ -11,6 +11,7 @@ package org.qcri.sparkpca;
 
 import java.io.File;
 import java.io.Serializable;
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Iterator;
 
@@ -288,7 +289,7 @@ public class SparkPCA implements Serializable {
 		
 		// initialize & broadcast a random seed
 		org.apache.spark.mllib.linalg.Matrix GaussianRandomMatrix = org.apache.spark.mllib.linalg.Matrices.randn(nCols,
-				nPCs + subsample, new java.util.Random(System.currentTimeMillis()));
+				nPCs + subsample, new SecureRandom());
 		final Matrix seedMahoutMatrix=PCAUtils.convertSparkToMahoutMatrix(GaussianRandomMatrix);
 		final Broadcast<Matrix> seed = sc.broadcast(seedMahoutMatrix);
 		PCAUtils.printMatrixToFile(GaussianRandomMatrix, OutputFormat.DENSE, "Seed");
@@ -367,16 +368,16 @@ public class SparkPCA implements Serializable {
 			
 		});
 		
-		org.apache.spark.mllib.linalg.Matrix QtA = org.apache.spark.mllib.linalg.Matrices.dense(nPCs+subsample, nCols, sumQtA.value());
+		
 
-		double[][] QtAArray=new double[nPCs+subsample][nCols];
+		double[][] QtA=new double[nPCs+subsample][nCols];
 		
 		for(int i=0;i<(nPCs+subsample);i++){
 			for(int j=0;j<nCols;j++){
-				QtAArray[i][j]=QtA.apply(i,j)-sumQ.value()[i]*br_ym_mahout.value().getQuick(j);
+				QtA[i][j]=sumQtA.value()[(nPCs+subsample) *j + i]-sumQ.value()[i]*br_ym_mahout.value().getQuick(j);
 			}
 		}
-		Matrix B=new DenseMatrix(QtAArray);
+		Matrix B=new DenseMatrix(QtA);
 		org.apache.mahout.math.SingularValueDecomposition SVD = new org.apache.mahout.math.SingularValueDecomposition(B);
 		
 		org.apache.spark.mllib.linalg.Matrix V = PCAUtils
