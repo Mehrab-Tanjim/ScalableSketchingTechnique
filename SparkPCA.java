@@ -439,11 +439,10 @@ public class SparkPCA implements Serializable {
 				nPCs + subsample, new SecureRandom());
 		final Matrix seedMahoutMatrix = PCAUtils.convertSparkToMahoutMatrix(GaussianRandomMatrix);
 		final Broadcast<Matrix> seed = sc.broadcast(seedMahoutMatrix);
-		PCAUtils.printMatrixToFile(GaussianRandomMatrix, OutputFormat.DENSE, "Seed");
 
 		final Vector seedMu = seedMahoutMatrix.transpose().times(meanVector);
 		final Broadcast<Vector> brSeedMu = sc.broadcast(seedMu);
-
+		
 		JavaRDD<org.apache.spark.mllib.linalg.Vector> Y = vectors
 				.map(new Function<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>() {
 
@@ -537,8 +536,7 @@ public class SparkPCA implements Serializable {
 
 		Matrix V = SVD.getV().viewPart(0, nCols, 0, nPCs);
 
-		// PCAUtils.printMatrixToFile(V, OutputFormat.DENSE, outputPath +
-		// File.separator + "V");
+		
 
 		/* clean up */
 		seed.destroy();
