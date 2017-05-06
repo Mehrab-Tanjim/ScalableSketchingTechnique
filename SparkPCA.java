@@ -66,6 +66,7 @@ public class SparkPCA implements Serializable {
 										// more precision
 	private final static boolean CALCULATE_ERR_ATTHEEND = false;
 	static double k_plus_one_singular_value = 0;
+	static double tolerance = 0.05;
 	static int nClusters = 4;
 	static int subsample = 10;
 	static String dataset = "Untitled";
@@ -82,8 +83,6 @@ public class SparkPCA implements Serializable {
 		final int nRows;
 		final int nCols;
 		final int nPCs;
-		final int trials;
-
 		try {
 			inputPath = System.getProperty("i");
 			if (inputPath == null)
@@ -109,18 +108,26 @@ public class SparkPCA implements Serializable {
 		}
 
 		try {
-			trials = Integer.parseInt(System.getProperty("trials"));
-		} catch (Exception e) {
-			printLogMessage("trials");
-			return;
-		}
-
-		try {
 			nCols = Integer.parseInt(System.getProperty("cols"));
 		} catch (Exception e) {
 			printLogMessage("cols");
 			return;
 		}
+
+		try {
+			k_plus_one_singular_value = Double.parseDouble(System.getProperty("kSingularValue"));
+		} catch (Exception e) {
+			printLogMessage("kSingularValue");
+			return;
+		}
+
+		try {
+			tolerance = Double.parseDouble(System.getProperty("tolerance"));
+		} catch (Exception e) {
+			printLogMessage("tolerance");
+			return;
+		}
+
 		try {
 
 			if (Integer.parseInt(System.getProperty("pcs")) == nCols) {
@@ -150,7 +157,7 @@ public class SparkPCA implements Serializable {
 				errRate = 1;
 			else
 				errRate = 1 / Math.pow(10, length - 4);
-			// log.warn("error sampling rate set to: errSampleRate=" + errRate);
+			log.warn("error sampling rate set to: errSampleRate=" + errRate);
 		}
 
 		try {
@@ -162,48 +169,45 @@ public class SparkPCA implements Serializable {
 
 		if ((nPCs + subsample) >= nCols) {
 			subsample = nCols - nPCs;
-			// log.warn("Subsample is set to default");
+			log.warn("Subsample is set to default");
 		}
 
 		try {
 			nClusters = Integer.parseInt(System.getProperty("clusters"));
 			System.out.println("No of partition is set to" + nClusters);
 		} catch (Exception e) {
-			// log.warn("Cluster size is set to default: "+nClusters);
+			log.warn("Cluster size is set to default: " + nClusters);
 		}
 
 		try {
 			maxIterations = Integer.parseInt(System.getProperty("maxIter"));
 		} catch (Exception e) {
-			// log.warn("maximum iterations is set to default: maximum
-			// Iterations=" + maxIterations);
+			log.warn("maximum iterations is set to default: maximum	Iterations=" + maxIterations);
 		}
 
 		try {
 			dataset = System.getProperty("dataset");
 		} catch (IllegalArgumentException e) {
-			// log.warn("Invalid Format " + System.getProperty("outFmt") + ",
-			// Default name for dataset" + dataset + " will be used ");
+			log.warn("Invalid Format " + System.getProperty("outFmt") + ", Default name for dataset" + dataset
+					+ " will be used ");
 		} catch (Exception e) {
-			// log.warn("Default oname for dataset " + dataset + " will be used
-			// ");
+			log.warn("Default oname for dataset " + dataset + " will be used ");
 		}
 
 		try {
 			outputFileFormat = OutputFormat.valueOf(System.getProperty("outFmt"));
 		} catch (IllegalArgumentException e) {
-			// log.warn("Invalid Format " + System.getProperty("outFmt") + ",
-			// Default output format" + outputFileFormat + " will be used ");
+			log.warn("Invalid Format " + System.getProperty("outFmt") + ", Default output format" + outputFileFormat
+					+ " will be used ");
 		} catch (Exception e) {
-			// log.warn("Default output format " + outputFileFormat + " will be
-			// used ");
+			log.warn("Default output format " + outputFileFormat + " will be used ");
 		}
 
 		try {
 			computeProjectedMatrix = Integer.parseInt(System.getProperty("computeProjectedMatrix"));
 		} catch (Exception e) {
-			// log.warn("Projected Matrix will not be computed, the output path
-			// will contain the principal components only");
+			log.warn(
+					"Projected Matrix will not be computed, the output path will contain the principal components only");
 		}
 
 		// Setting Spark configuration parameters
@@ -214,46 +218,14 @@ public class SparkPCA implements Serializable {
 																							// for
 																							// building
 		conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer");
-		conf.set("spark.kryoserializer.buffer.max","128m");
+		conf.set("spark.kryoserializer.buffer.max", "128m");
 		JavaSparkContext sc = new JavaSparkContext(conf);
 
 		// compute principal components
-		computePrincipalComponents(sc, inputPath, outputPath, nRows, nCols, nPCs, trials, errRate, maxIterations,
-				computeProjectedMatrix);
+		computePrincipalComponents(sc, inputPath, outputPath, nRows, nCols, nPCs, k_plus_one_singular_value, errRate,
+				maxIterations, computeProjectedMatrix);
 
 		// log.info("Principal components computed successfully ");
-	}
-
-	/**
-	 * Compute principal component analysis where the input is a RowMatrix
-	 * 
-	 * @param sc
-	 *            Spark context that contains the configuration parameters and
-	 *            represents connection to the cluster (used to create RDDs,
-	 *            accumulators and broadcast variables on that cluster)
-	 * @param inputMatrix
-	 *            Input Matrix
-	 * @param nRows
-	 *            Number of rows in input Matrix
-	 * @param nCols
-	 *            Number of columns in input Matrix
-	 * @param nPCs
-	 *            Number of desired principal components
-	 * @param errRate
-	 *            The sampling rate that is used for computing the
-	 *            reconstruction error
-	 * @param maxIterations
-	 *            Maximum number of iterations before terminating
-	 * @return Matrix of size nCols X nPCs having the desired principal
-	 *         components
-	 */
-	public static org.apache.spark.mllib.linalg.Matrix computePrincipalComponents(JavaSparkContext sc,
-			RowMatrix inputMatrix, final Broadcast<Vector> br_ym_mahout, final Vector meanVector, double norm2,
-			String outputPath, final int nRows, final int nCols, final int nPCs, final double errRate,
-			final int maxIterations, final int computeProjectedMatrix) {
-		JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors = inputMatrix.rows().toJavaRDD().cache();
-		return computePrincipalComponents(sc, vectors, br_ym_mahout, meanVector, norm2, outputPath, nRows, nCols, nPCs,
-				errRate, maxIterations, computeProjectedMatrix);
 	}
 
 	/**
@@ -281,28 +253,21 @@ public class SparkPCA implements Serializable {
 	 *         components
 	 */
 	public static org.apache.spark.mllib.linalg.Matrix computePrincipalComponents(JavaSparkContext sc, String inputPath,
-			String outputPath, final int nRows, final int nCols, final int nPCs, final int trials, final double errRate,
-			final int maxIterations, final int computeProjectedMatrix) {
+			String outputPath, final int nRows, final int nCols, final int nPCs, final double k_plus_one_singular_value,
+			final double errRate, final int maxIterations, final int computeProjectedMatrix) {
 
-		// TODO Mixture of dense and sparse matrix , SSVD is in dense matrix ,
-		// PPCA is in sparse matrix fix this
 		/**
 		 * preprocess the data
 		 * 
 		 * @param nClusters
-		 *            number of clusters, change later
+		 * 
 		 */
 		startTime = System.currentTimeMillis();
 
 		// Read from sequence file
 		JavaPairRDD<IntWritable, VectorWritable> seqVectors = sc.sequenceFile(inputPath, IntWritable.class,
-				VectorWritable.class,nClusters);
-		
-		// TODO for dense matrix modify here
+				VectorWritable.class, nClusters);
 
-		// Convert sequence file to RDD<org.apache.spark.mllib.linalg.Vector> of
-		// Vectors
-		
 		JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors = seqVectors
 				.map(new Function<Tuple2<IntWritable, VectorWritable>, org.apache.spark.mllib.linalg.Vector>() {
 
@@ -323,9 +288,9 @@ public class SparkPCA implements Serializable {
 						return sparkVector;
 					}
 				}).persist(StorageLevel.MEMORY_ONLY_SER()); // TODO
-																					// change
-																				// later;
-		
+															// change
+															// later;
+
 		// 1. Mean Job : This job calculates the mean and span of the columns of
 		// the input RDD<org.apache.spark.mllib.linalg.Vector>
 		final Accumulator<double[]> matrixAccumY = sc.accumulator(new double[nCols], new VectorAccumulatorParam());
@@ -400,46 +365,12 @@ public class SparkPCA implements Serializable {
 		});// end Frobenious Norm Job
 
 		double norm2 = doubleAccumNorm2.value();
-		// log.info("NOOOOORM2=" + norm2 );
-
-		// TODO huge waste of time, centering data twice one for SSVD and once
-		// for PPCA, fix this
-		/**
-		 * center data only for dense matrix
-		 */
-		/**
-		 * dont include testing purpose code in consideration of time also why
-		 * this part in pragmaticPPCA is taking more time than sPCA????? \\TODO
-		 * check
-		 */
-
-		 JavaRDD<org.apache.spark.mllib.linalg.Vector> A=vectors.map(new
-		 Function< org.apache.spark.mllib.linalg.Vector,
-		 org.apache.spark.mllib.linalg.Vector>() {
-		
-		 public org.apache.spark.mllib.linalg.Vector call(
-		 org.apache.spark.mllib.linalg.Vector arg0) throws Exception {
-		
-		 double[] ans=new double[arg0.size()];
-		
-		 for(int i=0;i<arg0.size();i++){
-		 ans[i]=arg0.apply(i)-br_ym_mahout.value().getQuick(i);
-		 }
-		 org.apache.spark.mllib.linalg.Vector sparkVector=
-		 org.apache.spark.mllib.linalg.Vectors.dense(ans);
-		 return sparkVector;
-		 }
-		 });
-		
-		 RowMatrix matA=new RowMatrix(A.rdd());
-		 k_plus_one_singular_value=matA.computeSVD(nCols, false,
-		 rCond).s().apply(nPCs);
 
 		endTime = System.currentTimeMillis();
 		totalTime = endTime - startTime;
 
 		stat.preprocessTime = (double) totalTime / 1000.0;
-		;
+
 		stat.totalRunTime = stat.preprocessTime;
 
 		stat.appName = "pragmaticPPCA";
@@ -447,54 +378,16 @@ public class SparkPCA implements Serializable {
 		stat.nRows = nRows;
 		stat.nCols = nCols;
 
-		double averageRuntime, totalRuntime = 0, varianceRuntime = 0, averageIter, totalIter = 0, varianceIter = 0;
-		ArrayList<Double> runtimeList = new ArrayList<Double>();
-		ArrayList<Integer> iterList = new ArrayList<Integer>();
+		// compute principal components
+		computePrincipalComponents(sc, vectors, br_ym_mahout, meanVector, norm2, outputPath, nRows, nCols, nPCs,
+				errRate, maxIterations, computeProjectedMatrix);
 
-		for (int i = 0; i < trials; i++) {
-			// compute principal components
-			org.apache.spark.mllib.linalg.Matrix principalComponentsMatrix = computePrincipalComponents(sc, vectors,
-					br_ym_mahout, meanVector, norm2, outputPath, nRows, nCols, nPCs, errRate, maxIterations,
-					computeProjectedMatrix);
+		// count the average ppca runtime
 
-			// count the average ppca runtime
-
-			for (int j = 0; j < stat.ppcaIterTime.size(); j++) {
-				stat.avgppcaIterTime += stat.ppcaIterTime.get(j);
-			}
-			stat.avgppcaIterTime /= stat.ppcaIterTime.size();
-
-			// save statistics
-			PCAUtils.printStatToFile(stat, outputPath);
-
-			totalRuntime += stat.totalRunTime;
-			totalIter += stat.nIter;
-
-			runtimeList.add((Double) stat.totalRunTime);
-			iterList.add((Integer) stat.nIter);
-			/**
-			 * clearing up
-			 */
-			stat.errorList.clear();
-			stat.ppcaIterTime.clear();
-			stat.totalRunTime = stat.preprocessTime;
-			stat.avgppcaIterTime = 0;
+		for (int j = 0; j < stat.ppcaIterTime.size(); j++) {
+			stat.avgppcaIterTime += stat.ppcaIterTime.get(j);
 		}
-
-		averageRuntime = totalRuntime / trials;
-		averageIter = totalIter / trials;
-
-		for (int i = 0; i < trials; i++) {
-			varianceRuntime += Math.pow((runtimeList.get(i) - averageRuntime), 2);
-			varianceIter += Math.pow((iterList.get(i) - averageIter), 2);
-		}
-
-		varianceRuntime /= (trials - 1);
-		varianceIter /= (trials - 1);
-
-		stat.appName = "PragmaticPPCA: total round " + trials + ", average runtime: " + averageRuntime
-				+ " variance of runtime: " + varianceRuntime + " average number of iteration: " + averageIter
-				+ " variance of iteration: " + varianceIter;
+		stat.avgppcaIterTime /= stat.ppcaIterTime.size();
 
 		// save statistics
 		PCAUtils.printStatToFile(stat, outputPath);
@@ -557,8 +450,10 @@ public class SparkPCA implements Serializable {
 					public org.apache.spark.mllib.linalg.Vector call(org.apache.spark.mllib.linalg.Vector arg0)
 							throws Exception {
 						double[] y = new double[nPCs + subsample];
-						double[] values =arg0.toArray();//TODO check does it really save time?!?!
-						
+						double[] values = arg0.toArray();// TODO check does it
+															// really save
+															// time?!?!
+
 						int[] indices = ((SparseVector) arg0).indices();
 						int index;
 						double value = 0;
@@ -597,12 +492,13 @@ public class SparkPCA implements Serializable {
 							throws Exception {
 
 						Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> pair;
-						double[] A =null;
-						double[] Q =null;
+						double[] A = null;
+						double[] Q = null;
 						while (arg0.hasNext()) {
 							// lol mistake
 							pair = arg0.next();
-							A = pair._2.toArray();//TODO check does it really save time, and why?!?!?!
+							A = pair._2.toArray();// TODO check does it really
+													// save time, and why?!?!?!
 							Q = pair._1.toArray();
 
 							int row = Q.length;
@@ -641,7 +537,8 @@ public class SparkPCA implements Serializable {
 
 		Matrix V = SVD.getV().viewPart(0, nCols, 0, nPCs);
 
-		//PCAUtils.printMatrixToFile(V, OutputFormat.DENSE, outputPath + File.separator + "V");
+		// PCAUtils.printMatrixToFile(V, OutputFormat.DENSE, outputPath +
+		// File.separator + "V");
 
 		/* clean up */
 		seed.destroy();
@@ -694,49 +591,13 @@ public class SparkPCA implements Serializable {
 		System.out.println("Rows: " + nRows + ", Columns " + nCols);
 
 		startTime = System.currentTimeMillis();
-		
+
 		JavaRDD<org.apache.spark.mllib.linalg.Vector> A_recon;
 		JavaRDD<org.apache.spark.mllib.linalg.Vector> recon_error;
 		double spectral_error;
 		double error;
 		Matrix VVt;
 		Vector muVVt;
-		//TODO the following code was to save ssvd error list, to see how ppca
-		// aggressively reduces error
-		//
-		// V=PCAUtils.convertMahoutToSparkMatrix(new
-		// org.apache.mahout.math.SingularValueDecomposition(centralC).getU());
-		//
-		// A_recon=matA.multiply(V.multiply((org.apache.spark.mllib.linalg.DenseMatrix)
-		// V.transpose())).rows().toJavaRDD();
-		//
-		// recon_error=A_recon.zip(A).map(new
-		// Function<Tuple2<org.apache.spark.mllib.linalg.Vector,org.apache.spark.mllib.linalg.Vector>,
-		// org.apache.spark.mllib.linalg.Vector>() {
-		//
-		// public org.apache.spark.mllib.linalg.Vector
-		// call(Tuple2<org.apache.spark.mllib.linalg.Vector,
-		// org.apache.spark.mllib.linalg.Vector> arg0)
-		// throws Exception {
-		//
-		// org.apache.spark.mllib.linalg.Vector A = arg0._2;
-		// org.apache.spark.mllib.linalg.Vector A_recon = arg0._1;
-		// int length=A.size();
-		// double[] result=new double[length];
-		// for(int i=0;i<length;i++){
-		// result[i]=A.apply(i)-A_recon.apply(i);
-		// }
-		//
-		// return org.apache.spark.mllib.linalg.Vectors.dense(result);
-		// }
-		// });
-		//
-		//
-		// spectral_error=new RowMatrix(recon_error.rdd()).computeSVD(nPCs,
-		// false, rCond).s().apply(0);
-		// error=(spectral_error-k_plus_one_singular_value)/k_plus_one_singular_value;
-		//
-		// stat.errorList.add((Double)error);
 
 		// initial CtC
 		Matrix centralCtC = centralC.transpose().times(centralC);
@@ -750,8 +611,7 @@ public class SparkPCA implements Serializable {
 		double relChangeInObjective = Double.MAX_VALUE;
 		double prevError = Double.MAX_VALUE;
 		final float threshold = 0.00001f;// not changing much
-		final int firstRound = round;
-		double target_error = 0.01; // 95% accuracy
+		double target_error = tolerance; // 95% accuracy
 
 		for (; (round < maxIterations && relChangeInObjective > threshold && prevError > target_error); round++) {
 
@@ -955,55 +815,54 @@ public class SparkPCA implements Serializable {
 
 			if (!CALCULATE_ERR_ATTHEEND) {
 				// log.info("Computing the error at round " + round + " ...");
-				startTime = System.currentTimeMillis();
 				System.out.println("Computing the error at round " + round + " ...");
 
-				V =	new org.apache.mahout.math.SingularValueDecomposition(centralC).getU();
-				
-				VVt=V.times(V.transpose());
-				muVVt=VVt.transpose().times(meanVector);
+				V = new org.apache.mahout.math.SingularValueDecomposition(centralC).getU();
 
+				VVt = V.times(V.transpose());
+				muVVt = VVt.transpose().times(meanVector);
 
 				final Broadcast<Matrix> brVVt = sc.broadcast(VVt);
 				final Broadcast<Vector> brMuVVt = sc.broadcast(muVVt);
-				
-				recon_error=vectors.map(new Function<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>() {
 
-					@Override
-					public org.apache.spark.mllib.linalg.Vector call(org.apache.spark.mllib.linalg.Vector arg0)
-							throws Exception {
-						// TODO Auto-generated method stub
-						double[] y = new double[nCols];
-						double[] values=arg0.toArray();//How does this save time??
-						
-						int[] indices = ((SparseVector) arg0).indices();						
-						int index;
-						double value = 0;
-						
-						for (int j = 0; j < (nCols); j++) {
-							for (int i = 0; i < indices.length; i++) {
-								index = indices[i];
-								value +=  values[index]*brVVt.value().getQuick(index, j);
+				recon_error = vectors.map(
+						new Function<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>() {
+
+							@Override
+							public org.apache.spark.mllib.linalg.Vector call(org.apache.spark.mllib.linalg.Vector arg0)
+									throws Exception {
+								// TODO Auto-generated method stub
+								double[] y = new double[nCols];
+								double[] values = arg0.toArray();// How does
+																	// this save
+																	// time??
+
+								int[] indices = ((SparseVector) arg0).indices();
+								int index;
+								double value = 0;
+
+								for (int j = 0; j < (nCols); j++) {
+									for (int i = 0; i < indices.length; i++) {
+										index = indices[i];
+										value += values[index] * brVVt.value().getQuick(index, j);
+									}
+									y[j] = values[j] - value - br_ym_mahout.value().getQuick(j)
+											+ brMuVVt.value().getQuick(j);
+									value = 0;
+								}
+
+								return Vectors.dense(y);
 							}
-							y[j] = values[j]-value - br_ym_mahout.value().getQuick(j)+brMuVVt.value().getQuick(j);
-							value = 0;
-						}
 
-						return Vectors.dense(y);
-					}
-					
-				});
+						});
 
 				spectral_error = new RowMatrix(recon_error.rdd()).computeSVD(nPCs, false, rCond).s().apply(0);
 				error = (spectral_error - k_plus_one_singular_value) / k_plus_one_singular_value;
 
-				endTime = System.currentTimeMillis();
-				totalTime = endTime - startTime;
-				
 				stat.errorList.add((Double) error);
 				// log.info("... end of computing the error at round " + round +
 				// " And error=" + error);
-				System.out.println("... end of computing the error at round " + round + "Time"+(double) totalTime / 1000.0+" And error=" + error);
+				System.out.println("... end of computing the error at round " + round + " error=" + error);
 				prevError = error;
 			}
 
