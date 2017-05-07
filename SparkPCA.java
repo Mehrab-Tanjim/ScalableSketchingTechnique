@@ -211,7 +211,7 @@ public class SparkPCA implements Serializable {
 		}
 
 		// Setting Spark configuration parameters
-		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA").setMaster("local[*]");// TODO
+		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA");//.setMaster("local[*]");// TODO
 																							// remove
 																							// this
 																							// part
