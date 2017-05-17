@@ -210,19 +210,20 @@ public class FileFormat {
         	  log.error("The path " + inputPath + " does not exist");
           	  return;
           }
+          int count=1;
           for(File file:filePathList)
           {
         	  BufferedReader br = new BufferedReader(new FileReader(file));
         	  String outputFileName=outputFolderPath+ File.separator + file.getName() + ".seq";
 	          writer=SequenceFile.createWriter(fs, conf, new Path(outputFileName), IntWritable.class, VectorWritable.class, CompressionType.BLOCK);
-	          int count=1;
+	          
 	          while ((thisLine = br.readLine()) != null) { // while loop begins here   		   
 	        	  String [] splitted = thisLine.split("\\s+");
 	        	  int rowID=Integer.parseInt(splitted[0])-11;
 	        	  int colID=Integer.parseInt(splitted[1])-11;
 	        	  double element=1;//Double.parseDouble(splitted[2]);
-	        	  if(count==1000) break;//take first 5000 count line number
-	        	  if(colID>1000) continue;//take 5000 columns
+	        	  //if(count==1000) break;//take first 5000 count line number
+	        	  if(colID>500000) continue;//take 5000 columns
 	        	  if(first)
 	        	  {
 	        		  first=false;
@@ -246,6 +247,7 @@ public class FileFormat {
 	          key.set(prevRowID);
 	          value.set(vector);
 	    	  writer.append(key,value);//write last row
+	    	  System.out.println("Total number of rows"+count+"");
 	          writer.close();
           }
           
