@@ -211,7 +211,7 @@ public class SparkPCA implements Serializable {
 		}
 
 		// Setting Spark configuration parameters
-		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA");//.setMaster("local[*]");// TODO
+		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA").setMaster("local[*]");// TODO
 																							// remove
 																							// this
 																							// part
@@ -818,9 +818,10 @@ public class SparkPCA implements Serializable {
 				V = new org.apache.mahout.math.SingularValueDecomposition(centralC).getU();
 
 				VVt = V.times(V.transpose());
-				muVVt = VVt.transpose().times(meanVector);
+				Vector temp=V.transpose().times(meanVector);
+				muVVt = V.times(temp);
 
-				final Broadcast<Matrix> brVVt = sc.broadcast(VVt);
+				final Broadcast<Matrix> brV = sc.broadcast(V);
 				final Broadcast<Vector> brMuVVt = sc.broadcast(muVVt);
 
 				recon_error = vectors.map(
@@ -834,18 +835,27 @@ public class SparkPCA implements Serializable {
 								double[] values = arg0.toArray();// How does
 																	// this save
 																	// time??
-
+								double[] temp=new double[nPCs];
 								int[] indices = ((SparseVector) arg0).indices();
 								int index;
 								double value = 0;
 
-								for (int j = 0; j < (nCols); j++) {
-									for (int i = 0; i < indices.length; i++) {
-										index = indices[i];
-										value += values[index] * brVVt.value().getQuick(index, j);
+								
+								
+								for (int k = 0; k < (nCols); k++) {
+									
+									for (int j = 0; j < (nPCs); j++) {
+										
+										for (int i = 0; i < indices.length; i++) {
+											index = indices[i];
+											temp[j] += values[index] * brV.value().getQuick(index, j);//A*V
+										}
+										value+=temp[j]* brV.value().getQuick(k, j);//transpose
+										temp[j]=0;
 									}
-									y[j] = values[j] - value - br_ym_mahout.value().getQuick(j)
-											+ brMuVVt.value().getQuick(j);
+									
+									y[k] = values[k] - value - br_ym_mahout.value().getQuick(k)
+											+ brMuVVt.value().getQuick(k);
 									value = 0;
 								}
 
