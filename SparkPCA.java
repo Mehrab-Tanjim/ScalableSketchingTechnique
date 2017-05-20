@@ -211,7 +211,7 @@ public class SparkPCA implements Serializable {
 		}
 
 		// Setting Spark configuration parameters
-		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA").setMaster("local[*]");// TODO
+		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA");//.setMaster("local[*]");// TODO
 																							// remove
 																							// this
 																							// part
@@ -437,7 +437,7 @@ public class SparkPCA implements Serializable {
 		// initialize & broadcast a random seed
 		org.apache.spark.mllib.linalg.Matrix GaussianRandomMatrix = org.apache.spark.mllib.linalg.Matrices.randn(nCols,
 				nPCs + subsample, new SecureRandom());
-		PCAUtils.printMatrixToFile(GaussianRandomMatrix, OutputFormat.DENSE, outputPath+File.separator+"Seed");
+		//PCAUtils.printMatrixToFile(GaussianRandomMatrix, OutputFormat.DENSE, outputPath+File.separator+"Seed");
 		final Matrix seedMahoutMatrix = PCAUtils.convertSparkToMahoutMatrix(GaussianRandomMatrix);
 		final Broadcast<Matrix> seed = sc.broadcast(seedMahoutMatrix);
 
