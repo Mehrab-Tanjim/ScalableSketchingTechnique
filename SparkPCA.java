@@ -437,6 +437,7 @@ public class SparkPCA implements Serializable {
 		// initialize & broadcast a random seed
 		org.apache.spark.mllib.linalg.Matrix GaussianRandomMatrix = org.apache.spark.mllib.linalg.Matrices.randn(nCols,
 				nPCs + subsample, new SecureRandom());
+		PCAUtils.printMatrixToFile(GaussianRandomMatrix, OutputFormat.DENSE, outputPath+File.separator+"Seed");
 		final Matrix seedMahoutMatrix = PCAUtils.convertSparkToMahoutMatrix(GaussianRandomMatrix);
 		final Broadcast<Matrix> seed = sc.broadcast(seedMahoutMatrix);
 
@@ -817,7 +818,7 @@ public class SparkPCA implements Serializable {
 
 				V = new org.apache.mahout.math.SingularValueDecomposition(centralC).getU();
 
-				VVt = V.times(V.transpose());
+				//VVt = V.times(V.transpose());
 				Vector temp=V.transpose().times(meanVector);
 				muVVt = V.times(temp);
 
@@ -840,18 +841,20 @@ public class SparkPCA implements Serializable {
 								int index;
 								double value = 0;
 
-								
+								for (int j = 0; j < (nPCs); j++) {
+									
+									for (int i = 0; i < indices.length; i++) {
+										index = indices[i];
+										temp[j] += values[index] * brV.value().getQuick(index, j);//A*V
+									}
+									
+									
+								}
 								
 								for (int k = 0; k < (nCols); k++) {
 									
-									for (int j = 0; j < (nPCs); j++) {
-										
-										for (int i = 0; i < indices.length; i++) {
-											index = indices[i];
-											temp[j] += values[index] * brV.value().getQuick(index, j);//A*V
-										}
+									for(int j=0;j<nPCs;j++){
 										value+=temp[j]* brV.value().getQuick(k, j);//transpose
-										temp[j]=0;
 									}
 									
 									y[k] = values[k] - value - br_ym_mahout.value().getQuick(k)
