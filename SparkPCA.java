@@ -867,7 +867,7 @@ public class SparkPCA implements Serializable {
 
 						});
 
-				spectral_error = new RowMatrix(recon_error.rdd()).computeSVD(nPCs, false, rCond).s().apply(0);
+				spectral_error = new Norm().spectralNorm(sc, recon_error, nRows, nCols, 1, 10, 2);
 				error = (spectral_error - k_plus_one_singular_value) / k_plus_one_singular_value;
 
 				stat.errorList.add((Double) error);
