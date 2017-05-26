@@ -159,7 +159,7 @@ public class kSingularValue implements Serializable {
 		}
 
 		// Setting Spark configuration parameters
-		SparkConf conf = new SparkConf().setAppName("kSingularValue").setMaster("local[*]");// TODO
+		SparkConf conf = new SparkConf().setAppName("kSingularValue");//.setMaster("local[*]");// TODO
 																							// remove
 																							// this
 																							// part

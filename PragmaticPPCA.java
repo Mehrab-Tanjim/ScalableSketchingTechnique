@@ -140,22 +140,11 @@ public class PragmaticPPCA implements Serializable {
 		/**
 		 * Defaults for optional arguments
 		 */
-		double errRate = 1;
 		int maxIterations = 3;
 		OutputFormat outputFileFormat = OutputFormat.DENSE;
 		int computeProjectedMatrix = 0;
 
-		try {
-			errRate = Float.parseFloat(System.getProperty("errSampleRate"));
-		} catch (Exception e) {
-
-			int length = String.valueOf(nRows).length();
-			if (length <= 4)
-				errRate = 1;
-			else
-				errRate = 1 / Math.pow(10, length - 4);
-			log.warn("error sampling rate set to: errSampleRate=" + errRate);
-		}
+		
 
 		try {
 			subsample = Integer.parseInt(System.getProperty("subSample"));
@@ -216,7 +205,7 @@ public class PragmaticPPCA implements Serializable {
 		}
 
 		// Setting Spark configuration parameters
-		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA").setMaster("local[*]");// TODO
+		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA");//.setMaster("local[*]");// TODO
 																							// remove
 																							// this
 																							// part
@@ -227,7 +216,7 @@ public class PragmaticPPCA implements Serializable {
 		JavaSparkContext sc = new JavaSparkContext(conf);
 
 		// compute principal components
-		computePrincipalComponents(sc, inputPath, outputPath, nRows, nCols, nPCs, k_plus_one_singular_value, errRate,
+		computePrincipalComponents(sc, inputPath, outputPath, nRows, nCols, nPCs, k_plus_one_singular_value, 
 				maxIterations, computeProjectedMatrix);
 
 		// log.info("Principal components computed successfully ");
@@ -260,7 +249,7 @@ public class PragmaticPPCA implements Serializable {
 	 */
 	public static org.apache.spark.mllib.linalg.Matrix computePrincipalComponents(JavaSparkContext sc, String inputPath,
 			String outputPath, final int nRows, final int nCols, final int nPCs, final double k_plus_one_singular_value,
-			final double errRate, final int maxIterations, final int computeProjectedMatrix) throws FileNotFoundException {
+			final int maxIterations, final int computeProjectedMatrix) throws FileNotFoundException {
 
 		/**
 		 * preprocess the data
@@ -386,7 +375,7 @@ public class PragmaticPPCA implements Serializable {
 
 		// compute principal components
 		computePrincipalComponents(sc, vectors, br_ym_mahout, meanVector, norm2, outputPath, nRows, nCols, nPCs,
-				errRate, maxIterations, computeProjectedMatrix);
+				 maxIterations, computeProjectedMatrix);
 
 		// count the average ppca runtime
 
@@ -430,7 +419,7 @@ public class PragmaticPPCA implements Serializable {
 	public static org.apache.spark.mllib.linalg.Matrix computePrincipalComponents(JavaSparkContext sc,
 			JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors, final Broadcast<Vector> br_ym_mahout,
 			final Vector meanVector, double norm2, String outputPath, final int nRows, final int nCols, final int nPCs,
-			final double errRate, final int maxIterations, final int computeProjectedMatrix) throws FileNotFoundException {
+			final int maxIterations, final int computeProjectedMatrix) throws FileNotFoundException {
 
 		startTime = System.currentTimeMillis();
 
@@ -598,11 +587,9 @@ public class PragmaticPPCA implements Serializable {
 
 		startTime = System.currentTimeMillis();
 
-		JavaRDD<org.apache.spark.mllib.linalg.Vector> A_recon;
 		JavaRDD<org.apache.spark.mllib.linalg.Vector> recon_error;
 		double spectral_error;
 		double error;
-		Matrix VVt;
 		Vector muVVt;
 
 		// initial CtC
