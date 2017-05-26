@@ -10,6 +10,7 @@
 package org.qcri.sparkpca;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.Serializable;
 import java.security.SecureRandom;
 import java.util.ArrayList;
@@ -56,14 +57,9 @@ import scala.Tuple2;
  * 
  */
 
-public class SparkPCA implements Serializable {
+public class PragmaticPPCA implements Serializable {
 
-	private final static Logger log = LoggerFactory.getLogger(SparkPCA.class);// getLogger(SparkPCA.class);
-	final int MAX_ROUNDS = 100;
-	final static double rCond = 1.0E-5d;// what the hell svd factor dunno TODO
-										// tune this if needs more precision, it
-										// definitely takes more time to get
-										// more precision
+	private final static Logger log = LoggerFactory.getLogger(PragmaticPPCA.class);// getLogger(SparkPCA.class);
 	private final static boolean CALCULATE_ERR_ATTHEEND = false;
 	static double k_plus_one_singular_value = 0;
 	static double tolerance = 0.05;
@@ -71,9 +67,10 @@ public class SparkPCA implements Serializable {
 	static int subsample = 10;
 	static String dataset = "Untitled";
 	static long startTime, endTime, totalTime;
+	static int q=2;//default
 	public static Stat stat = new Stat();
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws FileNotFoundException {
 		org.apache.log4j.Logger.getLogger("org").setLevel(Level.ERROR);
 		org.apache.log4j.Logger.getLogger("akka").setLevel(Level.ERROR);
 
@@ -179,6 +176,14 @@ public class SparkPCA implements Serializable {
 			log.warn("Cluster size is set to default: " + nClusters);
 		}
 
+		
+		try {
+			q = Integer.parseInt(System.getProperty("q"));
+			System.out.println("No of q is set to" + q);
+		} catch (Exception e) {
+			log.warn("q size is set to default: " + q);
+		}
+		
 		try {
 			maxIterations = Integer.parseInt(System.getProperty("maxIter"));
 		} catch (Exception e) {
@@ -211,7 +216,7 @@ public class SparkPCA implements Serializable {
 		}
 
 		// Setting Spark configuration parameters
-		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA");//.setMaster("local[*]");// TODO
+		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA").setMaster("local[*]");// TODO
 																							// remove
 																							// this
 																							// part
@@ -251,10 +256,11 @@ public class SparkPCA implements Serializable {
 	 *            Maximum number of iterations before terminating
 	 * @return Matrix of size nCols X nPCs having the desired principal
 	 *         components
+	 * @throws FileNotFoundException 
 	 */
 	public static org.apache.spark.mllib.linalg.Matrix computePrincipalComponents(JavaSparkContext sc, String inputPath,
 			String outputPath, final int nRows, final int nCols, final int nPCs, final double k_plus_one_singular_value,
-			final double errRate, final int maxIterations, final int computeProjectedMatrix) {
+			final double errRate, final int maxIterations, final int computeProjectedMatrix) throws FileNotFoundException {
 
 		/**
 		 * preprocess the data
@@ -419,11 +425,12 @@ public class SparkPCA implements Serializable {
 	 *            Maximum number of iterations before terminating
 	 * @return Matrix of size nCols X nPCs having the desired principal
 	 *         components
+	 * @throws FileNotFoundException 
 	 */
 	public static org.apache.spark.mllib.linalg.Matrix computePrincipalComponents(JavaSparkContext sc,
 			JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors, final Broadcast<Vector> br_ym_mahout,
 			final Vector meanVector, double norm2, String outputPath, final int nRows, final int nCols, final int nPCs,
-			final double errRate, final int maxIterations, final int computeProjectedMatrix) {
+			final double errRate, final int maxIterations, final int computeProjectedMatrix) throws FileNotFoundException {
 
 		startTime = System.currentTimeMillis();
 
@@ -866,8 +873,10 @@ public class SparkPCA implements Serializable {
 							}
 
 						});
-
-				spectral_error = new Norm().spectralNorm(sc, recon_error, nRows, nCols, 1, 10, 2);
+				
+				//the following subsample is fixed
+				spectral_error = new Norm().spectralNorm(sc, recon_error, nRows, nCols, 1, 100, q,
+						outputPath,"Reconstruction Error after "+round+" iteration");
 				error = (spectral_error - k_plus_one_singular_value) / k_plus_one_singular_value;
 
 				stat.errorList.add((Double) error);

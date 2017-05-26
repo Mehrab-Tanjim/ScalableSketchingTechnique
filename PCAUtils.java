@@ -44,7 +44,7 @@ import scala.Tuple2;
  * @author Tarek Elgamal
  */
 class PCAUtils {
-	 private final static Logger log = LoggerFactory.getLogger(SparkPCA.class);
+	 private final static Logger log = LoggerFactory.getLogger(PragmaticPPCA.class);
 	
 	/**
 	 * We use a single random object to help reproducing the erroneous scenarios
