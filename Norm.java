@@ -97,7 +97,7 @@ public class Norm implements Serializable {
 		for (int iter = 0; iter < q; iter++) {
 			y = matA.multiply((org.apache.spark.mllib.linalg.Matrix) br_QtA.getValue());
 			// QR decomposition of B
-			qr = y.tallSkinnyQR(true);
+			qr = y.tallSkinnyQR(true);//
 
 			QA = qr.Q().rows().toJavaRDD().zip(A);
 			
