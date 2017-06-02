@@ -93,60 +93,70 @@ public class Norm implements Serializable {
 		QRDecomposition<RowMatrix, org.apache.spark.mllib.linalg.Matrix> qr = null;
 		JavaPairRDD<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> QA = null;
 		JavaRDD<org.apache.spark.mllib.linalg.Matrix> QTA_partial = null;
-		org.apache.spark.mllib.linalg.Matrix QtA = null;
 		org.apache.mahout.math.SingularValueDecomposition svd = null;
-		for (int i = 0; i < q; i++) {
+		for (int iter = 0; iter < q; iter++) {
 			y = matA.multiply((org.apache.spark.mllib.linalg.Matrix) br_QtA.getValue());
 			// QR decomposition of B
 			qr = y.tallSkinnyQR(true);
 
 			QA = qr.Q().rows().toJavaRDD().zip(A);
-			QTA_partial = QA.map(
-					new Function<Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>, org.apache.spark.mllib.linalg.Matrix>() {
+			
+			final Accumulator<double[]> sumQtA = sc.accumulator(new double[(nPCs + subsample) * nCols],
+					new VectorAccumulatorParam());
 
-						public org.apache.spark.mllib.linalg.Matrix call(
-								Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> arg0)
+			final double[] sumQtAPartial = new double[(nPCs + subsample) * nCols];
+
+			QA.foreachPartition(
+					new VoidFunction<Iterator<Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>>>() {
+
+						@Override
+						public void call(
+								Iterator<Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>> arg0)
 								throws Exception {
 
-							org.apache.spark.mllib.linalg.Vector A = arg0._2;
-							org.apache.spark.mllib.linalg.Vector Q = arg0._1;
+							Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> pair;
+							double[] A = null;
+							double[] Q = null;
+							while (arg0.hasNext()) {
+								// lol mistake
+								pair = arg0.next();
+								A = pair._2.toArray();// TODO check does it really
+														// save time, and why?!?!?!
+								Q = pair._1.toArray();
 
-							int col = A.size();
-							int row = Q.size();
-							double[] result = new double[row * col];
-							for (int j = 0; j < col; j++) {
-								for (int i = 0; i < row; i++) {
-									result[row * j + i] = Q.apply(i) * A.apply(j);
+								int row = Q.length;
+								int column = A.length;
+								for (int j = 0; j < column; j++) {
+									for (int i = 0; i < row; i++) {
+										sumQtAPartial[row * j + i] += Q[i] * A[j];
+									}
 								}
+
 							}
-							return org.apache.spark.mllib.linalg.Matrices.dense(row, col, result);
+
+							sumQtA.add(sumQtAPartial);
+
 						}
+
 					});
-
-			QtA = QTA_partial.reduce(
-					new Function2<org.apache.spark.mllib.linalg.Matrix, org.apache.spark.mllib.linalg.Matrix, org.apache.spark.mllib.linalg.Matrix>() {
-
-						public org.apache.spark.mllib.linalg.Matrix call(org.apache.spark.mllib.linalg.Matrix arg0,
-								org.apache.spark.mllib.linalg.Matrix arg1) throws Exception {
-
-							org.apache.spark.mllib.linalg.Matrix A = arg0;
-							org.apache.spark.mllib.linalg.Matrix B = arg1;
-							int row = A.numRows();
-							int col = A.numCols();
-							double[] result = new double[row * col];
-							for (int j = 0; j < col; j++) {
-								for (int i = 0; i < row; i++) {
-									result[row * j + i] = A.apply(i, j) + B.apply(i, j);
-								}
-							}
-							return org.apache.spark.mllib.linalg.Matrices.dense(row, col, result);
-						}
-					});
-			br_QtA = sc.broadcast(QtA.transpose());
-			svd = new org.apache.mahout.math.SingularValueDecomposition(PCAUtils.convertSparkToMahoutMatrix(QtA));
+			
+			double[][] QtA = new double[nPCs + subsample][nCols];
+			
+			for (int i = 0; i < (nPCs + subsample); i++) {
+				for (int j = 0; j < nCols; j++) {
+					QtA[i][j] = sumQtA.value()[(nPCs + subsample) * j + i];
+				}
+			}
+			Matrix B = new DenseMatrix(QtA);
+			out.append("mapping part done");
+			out.flush();
+			
+			br_QtA = sc.broadcast(PCAUtils.convertMahoutToSparkMatrix(B).transpose());
+			svd = new org.apache.mahout.math.SingularValueDecomposition(B);
 			// keeping log
-			out.append("Specral Norm of " + (nPCs - 1) + " after " + i + " iteration is :"
+			out.append("Specral Norm of " + (nPCs - 1) + " after " + iter + " iteration is :"
 					+ svd.getS().getQuick(nPCs - 1, nPCs - 1)+"\n");
+			out.flush();//lololol
 
 		}
 
