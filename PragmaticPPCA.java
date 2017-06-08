@@ -439,12 +439,14 @@ public class PragmaticPPCA implements Serializable {
 		 */
 
 		// initialize & broadcast a random seed
-		org.apache.spark.mllib.linalg.Matrix GaussianRandomMatrix = org.apache.spark.mllib.linalg.Matrices.randn(nCols,
-				nPCs + subsample, new SecureRandom());
-		//PCAUtils.printMatrixToFile(GaussianRandomMatrix, OutputFormat.DENSE, outputPath+File.separator+"Seed");
-		final Matrix seedMahoutMatrix = PCAUtils.convertSparkToMahoutMatrix(GaussianRandomMatrix);
+//		org.apache.spark.mllib.linalg.Matrix GaussianRandomMatrix = org.apache.spark.mllib.linalg.Matrices.randn(nCols,
+//				nPCs + subsample, new SecureRandom());
+//		//PCAUtils.printMatrixToFile(GaussianRandomMatrix, OutputFormat.DENSE, outputPath+File.separator+"Seed");
+//		final Matrix seedMahoutMatrix = PCAUtils.convertSparkToMahoutMatrix(GaussianRandomMatrix);
+		Matrix GaussianRandomMatrix=PCAUtils.randomValidationMatrix(nCols, nPCs+subsample);
+		final Matrix seedMahoutMatrix=GaussianRandomMatrix;
 		final Broadcast<Matrix> seed = sc.broadcast(seedMahoutMatrix);
-
+		System.out.println(seedMahoutMatrix);
 		final Vector seedMu = seedMahoutMatrix.transpose().times(meanVector);
 		final Broadcast<Vector> brSeedMu = sc.broadcast(seedMu);
 		
@@ -541,7 +543,7 @@ public class PragmaticPPCA implements Serializable {
 
 		Matrix V = SVD.getV().viewPart(0, nCols, 0, nPCs);
 
-		
+		System.out.println(SVD.getS().get(10, 10));
 
 		/* clean up */
 		seed.destroy();
