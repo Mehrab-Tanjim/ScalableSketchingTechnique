@@ -475,6 +475,7 @@ public class PragmaticPPCA implements Serializable {
 						int[] indices = ((SparseVector) arg0).indices();
 						int index;
 						double value = 0;
+						
 						for (int j = 0; j < (nPCs + subsample); j++) {
 							for (int i = 0; i < indices.length; i++) {
 								index = indices[i];
