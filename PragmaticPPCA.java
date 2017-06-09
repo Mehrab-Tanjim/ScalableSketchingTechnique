@@ -61,7 +61,7 @@ public class PragmaticPPCA implements Serializable {
 
 	private final static Logger log = LoggerFactory.getLogger(PragmaticPPCA.class);// getLogger(SparkPCA.class);
 	private final static boolean CALCULATE_ERR_ATTHEEND = false;
-	
+
 	static String dataset = "Untitled";
 	static long startTime, endTime, totalTime;
 	public static int nClusters = 4;
@@ -77,11 +77,11 @@ public class PragmaticPPCA implements Serializable {
 		final int nRows;
 		final int nCols;
 		final int nPCs;
-		final int q;//default
+		final int q;// default
 		final double k_plus_one_singular_value;
-		final double tolerance ;		
+		final double tolerance;
 		final int subsample;
-		
+
 		try {
 			inputPath = System.getProperty("i");
 			if (inputPath == null)
@@ -126,7 +126,7 @@ public class PragmaticPPCA implements Serializable {
 			printLogMessage("tolerance");
 			return;
 		}
-		
+
 		try {
 			subsample = Integer.parseInt(System.getProperty("subSample"));
 			System.out.println("Subsample is set to" + subsample);
@@ -134,7 +134,7 @@ public class PragmaticPPCA implements Serializable {
 			printLogMessage("subsample");
 			return;
 		}
-		
+
 		try {
 			q = Integer.parseInt(System.getProperty("q"));
 			System.out.println("No of q is set to" + q);
@@ -142,7 +142,7 @@ public class PragmaticPPCA implements Serializable {
 			printLogMessage("q");
 			return;
 		}
-		
+
 		try {
 
 			if (Integer.parseInt(System.getProperty("pcs")) == nCols) {
@@ -162,10 +162,6 @@ public class PragmaticPPCA implements Serializable {
 		OutputFormat outputFileFormat = OutputFormat.DENSE;
 		int computeProjectedMatrix = 0;
 
-		
-
-		
-
 		try {
 			nClusters = Integer.parseInt(System.getProperty("clusters"));
 			System.out.println("No of partition is set to" + nClusters);
@@ -173,9 +169,6 @@ public class PragmaticPPCA implements Serializable {
 			log.warn("Cluster size is set to default: " + nClusters);
 		}
 
-		
-		
-		
 		try {
 			maxIterations = Integer.parseInt(System.getProperty("maxIter"));
 		} catch (Exception e) {
@@ -208,20 +201,20 @@ public class PragmaticPPCA implements Serializable {
 		}
 
 		// Setting Spark configuration parameters
-		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA");//.setMaster("local[*]");// TODO
-																							// remove
-																							// this
-																							// part
-																							// for
-																							// building
+		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA");// .setMaster("local[*]");//
+																		// TODO
+																		// remove
+																		// this
+																		// part
+																		// for
+																		// building
 		conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer");
 		conf.set("spark.kryoserializer.buffer.max", "128m");
 		JavaSparkContext sc = new JavaSparkContext(conf);
 
 		// compute principal components
-		computePrincipalComponents(sc, inputPath, outputPath, nRows, nCols, nPCs,
-				subsample, tolerance, k_plus_one_singular_value, q,
-				maxIterations, computeProjectedMatrix);
+		computePrincipalComponents(sc, inputPath, outputPath, nRows, nCols, nPCs, subsample, tolerance,
+				k_plus_one_singular_value, q, maxIterations, computeProjectedMatrix);
 
 		// log.info("Principal components computed successfully ");
 	}
@@ -249,13 +242,12 @@ public class PragmaticPPCA implements Serializable {
 	 *            Maximum number of iterations before terminating
 	 * @return Matrix of size nCols X nPCs having the desired principal
 	 *         components
-	 * @throws FileNotFoundException 
+	 * @throws FileNotFoundException
 	 */
 	public static org.apache.spark.mllib.linalg.Matrix computePrincipalComponents(JavaSparkContext sc, String inputPath,
-			String outputPath, final int nRows, final int nCols, final int nPCs,
-			final int subsample, final double tolerance, final double k_plus_one_singular_value,
-			final int q, 
-			final int maxIterations, final int computeProjectedMatrix) throws FileNotFoundException {
+			String outputPath, final int nRows, final int nCols, final int nPCs, final int subsample,
+			final double tolerance, final double k_plus_one_singular_value, final int q, final int maxIterations,
+			final int computeProjectedMatrix) throws FileNotFoundException {
 
 		/**
 		 * preprocess the data
@@ -381,7 +373,7 @@ public class PragmaticPPCA implements Serializable {
 
 		// compute principal components
 		computePrincipalComponents(sc, vectors, br_ym_mahout, meanVector, norm2, outputPath, nRows, nCols, nPCs,
-				subsample, tolerance,k_plus_one_singular_value, q, maxIterations, computeProjectedMatrix);
+				subsample, tolerance, k_plus_one_singular_value, q, maxIterations, computeProjectedMatrix);
 
 		// count the average ppca runtime
 
@@ -420,13 +412,12 @@ public class PragmaticPPCA implements Serializable {
 	 *            Maximum number of iterations before terminating
 	 * @return Matrix of size nCols X nPCs having the desired principal
 	 *         components
-	 * @throws FileNotFoundException 
+	 * @throws FileNotFoundException
 	 */
 	public static org.apache.spark.mllib.linalg.Matrix computePrincipalComponents(JavaSparkContext sc,
 			JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors, final Broadcast<Vector> br_ym_mahout,
 			final Vector meanVector, double norm2, String outputPath, final int nRows, final int nCols, final int nPCs,
-			final int subsample, final double tolerance, final double k_plus_one_singular_value,
-			final int q,
+			final int subsample, final double tolerance, final double k_plus_one_singular_value, final int q,
 			final int maxIterations, final int computeProjectedMatrix) throws FileNotFoundException {
 
 		startTime = System.currentTimeMillis();
@@ -439,10 +430,13 @@ public class PragmaticPPCA implements Serializable {
 		 */
 
 		// initialize & broadcast a random seed
-//		org.apache.spark.mllib.linalg.Matrix GaussianRandomMatrix = org.apache.spark.mllib.linalg.Matrices.randn(nCols,
-//				nPCs + subsample, new SecureRandom());
-//		//PCAUtils.printMatrixToFile(GaussianRandomMatrix, OutputFormat.DENSE, outputPath+File.separator+"Seed");
-//		final Matrix seedMahoutMatrix = PCAUtils.convertSparkToMahoutMatrix(GaussianRandomMatrix);
+		// org.apache.spark.mllib.linalg.Matrix GaussianRandomMatrix =
+		// org.apache.spark.mllib.linalg.Matrices.randn(nCols,
+		// nPCs + subsample, new SecureRandom());
+		// //PCAUtils.printMatrixToFile(GaussianRandomMatrix,
+		// OutputFormat.DENSE, outputPath+File.separator+"Seed");
+		// final Matrix seedMahoutMatrix =
+		// PCAUtils.convertSparkToMahoutMatrix(GaussianRandomMatrix);
 		/**
 		 * Sketch dimension ,S=nPCs+subsample Sketched matrix, B=A*S; QR
 		 * decomposition, Q=qr(B); SV decomposition, [~,s,V]=svd(Q);
@@ -451,121 +445,121 @@ public class PragmaticPPCA implements Serializable {
 		// initialize & broadcast a random seed
 		org.apache.spark.mllib.linalg.Matrix GaussianRandomMatrix = org.apache.spark.mllib.linalg.Matrices.randn(nCols,
 				nPCs + subsample, new SecureRandom());
-		//PCAUtils.printMatrixToFile(GaussianRandomMatrix, OutputFormat.DENSE, outputPath+File.separator+"Seed");
+		// PCAUtils.printMatrixToFile(GaussianRandomMatrix, OutputFormat.DENSE,
+		// outputPath+File.separator+"Seed");
 		Matrix B = PCAUtils.convertSparkToMahoutMatrix(GaussianRandomMatrix);
-//		Matrix GaussianRandomMatrix=PCAUtils.randomValidationMatrix(nCols, nPCs+subsample); 
-//		Matrix B=GaussianRandomMatrix;
-//		PCAUtils.printMatrixToFile(PCAUtils.convertMahoutToSparkMatrix(GaussianRandomMatrix), OutputFormat.DENSE, outputPath+File.separator+"Seed");
-		
-		Matrix V=null;
-		org.apache.mahout.math.SingularValueDecomposition SVD =null;
-	
-			final Broadcast<Matrix> seed = sc.broadcast(B);
+		// Matrix GaussianRandomMatrix=PCAUtils.randomValidationMatrix(nCols,
+		// nPCs+subsample);
+		// Matrix B=GaussianRandomMatrix;
+		// PCAUtils.printMatrixToFile(PCAUtils.convertMahoutToSparkMatrix(GaussianRandomMatrix),
+		// OutputFormat.DENSE, outputPath+File.separator+"Seed");
 
-			final Vector seedMu = B.transpose().times(meanVector);
-			final Broadcast<Vector> brSeedMu = sc.broadcast(seedMu);
-			//System.out.println(brSeedMu.value().getQuick(5));
-			JavaRDD<org.apache.spark.mllib.linalg.Vector> Y = vectors
-					.map(new Function<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>() {
+		Matrix V = null;
+		org.apache.mahout.math.SingularValueDecomposition SVD = null;
 
-						public org.apache.spark.mllib.linalg.Vector call(org.apache.spark.mllib.linalg.Vector arg0)
-								throws Exception {
-							double[] y = new double[nPCs + subsample];
-							double[] values = arg0.toArray();// TODO check does it
-																// really save
-																// time?!?!
+		final Broadcast<Matrix> seed = sc.broadcast(B);
 
-							int[] indices = ((SparseVector) arg0).indices();
+		final Vector seedMu = B.transpose().times(meanVector);
+		final Broadcast<Vector> brSeedMu = sc.broadcast(seedMu);
+		// System.out.println(brSeedMu.value().getQuick(5));
+		JavaRDD<org.apache.spark.mllib.linalg.Vector> Y = vectors
+				.map(new Function<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>() {
+
+					public org.apache.spark.mllib.linalg.Vector call(org.apache.spark.mllib.linalg.Vector arg0)
+							throws Exception {
+						double[] y = new double[nPCs + subsample];
+						double[] values = arg0.toArray();// TODO check does it
+															// really save
+															// time?!?!
+
+						int[] indices = ((SparseVector) arg0).indices();
+						int index;
+						double value = 0;
+						for (int j = 0; j < (nPCs + subsample); j++) {
+							for (int i = 0; i < indices.length; i++) {
+								index = indices[i];
+								value += values[index] * seed.value().getQuick(index, j);
+							}
+							y[j] = value - brSeedMu.value().getQuick(j);
+							value = 0;
+						}
+
+						return Vectors.dense(y);
+
+					}
+				});
+
+		// QR decomposition of B
+		QRDecomposition<RowMatrix, org.apache.spark.mllib.linalg.Matrix> QR = new RowMatrix(Y.rdd()).tallSkinnyQR(true);
+
+		JavaPairRDD<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> QnA = QR.Q().rows()
+				.toJavaRDD().zip(vectors);
+		final Accumulator<double[]> sumQ = sc.accumulator(new double[nPCs + subsample], new VectorAccumulatorParam());
+		final Accumulator<double[]> sumQtA = sc.accumulator(new double[(nPCs + subsample) * nCols],
+				new VectorAccumulatorParam());
+
+		final double[] sumQPartial = new double[nPCs + subsample];
+		final double[] sumQtAPartial = new double[(nPCs + subsample) * nCols];
+
+		QnA.foreachPartition(
+				new VoidFunction<Iterator<Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>>>() {
+
+					@Override
+					public void call(
+							Iterator<Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>> arg0)
+							throws Exception {
+
+						Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> pair;
+						double[] A = null;
+						double[] Q = null;
+						while (arg0.hasNext()) {
+							// lol mistake
+							pair = arg0.next();
+							A = pair._2.toArray();// TODO check does it really
+													// save time, and why?!?!?!
+							Q = pair._1.toArray();
+
+							int row = nPCs + subsample;
+							int[] indices = ((SparseVector) pair._2).indices();
 							int index;
-							double value = 0;
-							for (int j = 0; j < (nPCs + subsample); j++) {
-								for (int i = 0; i < indices.length; i++) {
-									index = indices[i];
-									value += values[index] * seed.value().getQuick(index, j);
-								}
-								y[j] = value - brSeedMu.value().getQuick(j);
-								value = 0;
-							}
-
-							return Vectors.dense(y);
-
-						}
-					});
-
-			// QR decomposition of B
-			QRDecomposition<RowMatrix, org.apache.spark.mllib.linalg.Matrix> QR = new RowMatrix(Y.rdd()).tallSkinnyQR(true);
-
-			JavaPairRDD<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> QnA = QR.Q().rows()
-					.toJavaRDD().zip(vectors);
-			final Accumulator<double[]> sumQ = sc.accumulator(new double[nPCs + subsample], new VectorAccumulatorParam());
-			final Accumulator<double[]> sumQtA = sc.accumulator(new double[(nPCs + subsample) * nCols],
-					new VectorAccumulatorParam());
-
-			final double[] sumQPartial = new double[nPCs + subsample];
-			final double[] sumQtAPartial = new double[(nPCs + subsample) * nCols];
-
-			QnA.foreachPartition(
-					new VoidFunction<Iterator<Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>>>() {
-
-						@Override
-						public void call(
-								Iterator<Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>> arg0)
-								throws Exception {
-
-							Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> pair;
-							double[] A = null;
-							double[] Q = null;
-							while (arg0.hasNext()) {
-								// lol mistake
-								pair = arg0.next();
-								A = pair._2.toArray();// TODO check does it really
-														// save time, and why?!?!?!
-								Q = pair._1.toArray();
-
-								int row =nPCs+subsample;
-								int[] indices = ((SparseVector) pair._2).indices();
-								int index;
-								for (int j = 0; j < indices.length; j++) {
-									for (int i = 0; i < row; i++) {
-										index = indices[j];
-										sumQtAPartial[row * index + i] += Q[i] * A[index];
-									}
-								}
+							for (int j = 0; j < indices.length; j++) {
 								for (int i = 0; i < row; i++) {
-									sumQPartial[i] += Q[i];
+									index = indices[j];
+									sumQtAPartial[row * index + i] += Q[i] * A[index];
 								}
-
 							}
-							
-							sumQ.add(sumQPartial);
-							sumQtA.add(sumQtAPartial);
+							for (int i = 0; i < row; i++) {
+								sumQPartial[i] += Q[i];
+							}
 
 						}
 
-					});
-			Vector sumQtAres=new DenseVector(sumQtA.value());
-			Vector sumQres=new DenseVector(sumQ.value());
-			
+						sumQ.add(sumQPartial);
+						sumQtA.add(sumQtAPartial);
 
-			double[][] QtA = new double[nPCs + subsample][nCols];
+					}
 
-			for (int i = 0; i < (nPCs + subsample); i++) {
-				for (int j = 0; j < nCols; j++) {
-					QtA[i][j] = sumQtAres.getQuick((nPCs + subsample) * j + i)
-							- sumQres.getQuick(i) * meanVector.getQuick(j);
-				}
+				});
+		Vector sumQtAres = new DenseVector(sumQtA.value());
+		Vector sumQres = new DenseVector(sumQ.value());
+
+		double[][] QtA = new double[nPCs + subsample][nCols];
+
+		for (int i = 0; i < (nPCs + subsample); i++) {
+			for (int j = 0; j < nCols; j++) {
+				QtA[i][j] = sumQtAres.getQuick((nPCs + subsample) * j + i)
+						- sumQres.getQuick(i) * meanVector.getQuick(j);
 			}
-			
-			B = new DenseMatrix(QtA);
+		}
 
-			
-			SVD = new org.apache.mahout.math.SingularValueDecomposition(
-					B);
+		B = new DenseMatrix(QtA);
 
-			V = SVD.getV().viewPart(0, nCols, 0, nPCs);
-			//System.out.println(V);
+		SVD = new org.apache.mahout.math.SingularValueDecomposition(B);
 
-		//clean up
+		V = SVD.getV().viewPart(0, nCols, 0, nPCs);
+		// System.out.println(V);
+
+		// clean up
 		seed.destroy();
 
 		/****************************
@@ -840,59 +834,8 @@ public class PragmaticPPCA implements Serializable {
 				// log.info("Computing the error at round " + round + " ...");
 				System.out.println("Computing the error at round " + round + " ...");
 
-				V = new org.apache.mahout.math.SingularValueDecomposition(centralC).getU();
-
-				//VVt = V.times(V.transpose());
-				Vector temp=V.transpose().times(meanVector);
-				muVVt = V.times(temp);
-
-				final Broadcast<Matrix> brV = sc.broadcast(V);
-				final Broadcast<Vector> brMuVVt = sc.broadcast(muVVt);
-
-				recon_error = vectors.map(
-						new Function<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>() {
-
-							@Override
-							public org.apache.spark.mllib.linalg.Vector call(org.apache.spark.mllib.linalg.Vector arg0)
-									throws Exception {
-								// TODO Auto-generated method stub
-								double[] y = new double[nCols];
-								double[] values = arg0.toArray();// How does
-																	// this save
-																	// time??
-								double[] temp=new double[nPCs];
-								int[] indices = ((SparseVector) arg0).indices();
-								int index;
-								double value = 0;
-
-								for (int j = 0; j < (nPCs); j++) {
-									
-									for (int i = 0; i < indices.length; i++) {
-										index = indices[i];
-										temp[j] += values[index] * brV.value().getQuick(index, j);//A*V
-									}
-									
-									
-								}
-								
-								for (int k = 0; k < (nCols); k++) {
-									
-									for(int j=0;j<nPCs;j++){
-										value+=temp[j]* brV.value().getQuick(k, j);//transpose
-									}
-									
-									y[k] = values[k] - value - br_ym_mahout.value().getQuick(k)
-											+ brMuVVt.value().getQuick(k);
-									value = 0;
-								}
-
-								return Vectors.dense(y);
-							}
-
-						});
-				
-				//the following subsample is fixed
-				spectral_error = norm(sc, recon_error, nRows, nCols, 1, 100, q);
+				// the following subsample is fixed
+				spectral_error = norm(sc, vectors, nRows, nCols, 1, 100, q, meanVector, centralC);
 				error = (spectral_error - k_plus_one_singular_value) / k_plus_one_singular_value;
 
 				stat.errorList.add((Double) error);
@@ -913,11 +856,10 @@ public class PragmaticPPCA implements Serializable {
 				.convertMahoutToSparkMatrix(new org.apache.mahout.math.SingularValueDecomposition(centralC).getU());
 
 	}
-	
-	private static double norm(JavaSparkContext sc,
-			final JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors,
-			final int nRows, final int nCols, final int nPCs, final int subsample, final int q
-			){
+
+	private static double norm(JavaSparkContext sc, final JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors,
+			final int nRows, final int nCols, final int nPCs, final int subsample, final int q, final Vector meanVector,
+			final Matrix centralC) {
 		/************************** SSVD PART *****************************/
 
 		/**
@@ -928,32 +870,50 @@ public class PragmaticPPCA implements Serializable {
 		// initialize & broadcast a random seed
 		org.apache.spark.mllib.linalg.Matrix GaussianRandomMatrix = org.apache.spark.mllib.linalg.Matrices.randn(nCols,
 				nPCs + subsample, new SecureRandom());
-		//PCAUtils.printMatrixToFile(GaussianRandomMatrix, OutputFormat.DENSE, outputPath+File.separator+"Seed");
+		// PCAUtils.printMatrixToFile(GaussianRandomMatrix, OutputFormat.DENSE,
+		// outputPath+File.separator+"Seed");
 		Matrix B = PCAUtils.convertSparkToMahoutMatrix(GaussianRandomMatrix);
-		B=B.transpose();
-		double V=0;
-		
-		for(int iter=0;iter<q;iter++){
-			final Broadcast<Matrix> seed = sc.broadcast(B.transpose());
 
-			//System.out.println(brSeedMu.value().getQuick(5));
+		Matrix V = new org.apache.mahout.math.SingularValueDecomposition(centralC).getU();
+
+		org.apache.mahout.math.SingularValueDecomposition SVD = null;
+
+		double S = 0;
+
+		for (int iter = 0; iter < q; iter++) {
+			// V'*omega
+			Matrix VtSeed = V.transpose().times(B);
+			// V*V'*omega
+			Matrix VVtSeed = V.times(VtSeed);
+			// omega-V*V'*omega
+			Matrix Seed = B.minus(VVtSeed);
+
+			final Vector seedMu = Seed.times(meanVector);
+			final Broadcast<Vector> brSeedMu = sc.broadcast(seedMu);
+			// System.out.println(brSeedMu.value().getQuick(5));
+
+			final Broadcast<Matrix> seed = sc.broadcast(Seed);
+
 			JavaRDD<org.apache.spark.mllib.linalg.Vector> Y = vectors
 					.map(new Function<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>() {
 
 						public org.apache.spark.mllib.linalg.Vector call(org.apache.spark.mllib.linalg.Vector arg0)
 								throws Exception {
 							double[] y = new double[nPCs + subsample];
-							double[] values = arg0.toArray();// TODO check does it
+							double[] values = arg0.toArray();// TODO check does
+																// it
 																// really save
 																// time?!?!
 
-							
+							int[] indices = ((SparseVector) arg0).indices();
+							int index;
 							double value = 0;
 							for (int j = 0; j < (nPCs + subsample); j++) {
-								for (int i = 0; i < values.length; i++) {
-									value += values[i] * seed.value().getQuick(i, j);
+								for (int i = 0; i < indices.length; i++) {
+									index = indices[i];
+									value += values[index] * seed.value().getQuick(index, j);
 								}
-								y[j] = value;
+								y[j] = value - brSeedMu.value().getQuick(j);
 								value = 0;
 							}
 
@@ -963,13 +923,17 @@ public class PragmaticPPCA implements Serializable {
 					});
 
 			// QR decomposition of B
-			QRDecomposition<RowMatrix, org.apache.spark.mllib.linalg.Matrix> QR = new RowMatrix(Y.rdd()).tallSkinnyQR(true);
+			QRDecomposition<RowMatrix, org.apache.spark.mllib.linalg.Matrix> QR = new RowMatrix(Y.rdd())
+					.tallSkinnyQR(true);
 
 			JavaPairRDD<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> QnA = QR.Q().rows()
 					.toJavaRDD().zip(vectors);
+			final Accumulator<double[]> sumQ = sc.accumulator(new double[nPCs + subsample],
+					new VectorAccumulatorParam());
 			final Accumulator<double[]> sumQtA = sc.accumulator(new double[(nPCs + subsample) * nCols],
 					new VectorAccumulatorParam());
 
+			final double[] sumQPartial = new double[nPCs + subsample];
 			final double[] sumQtAPartial = new double[(nPCs + subsample) * nCols];
 
 			QnA.foreachPartition(
@@ -986,49 +950,58 @@ public class PragmaticPPCA implements Serializable {
 							while (arg0.hasNext()) {
 								// lol mistake
 								pair = arg0.next();
-								A = pair._2.toArray();// TODO check does it really
-														// save time, and why?!?!?!
+								A = pair._2.toArray();// TODO check does it
+														// really
+														// save time, and
+														// why?!?!?!
 								Q = pair._1.toArray();
 
-								int row =nPCs+subsample;
-								
-								for (int j = 0; j < A.length; j++) {
+								int row = nPCs + subsample;
+								int[] indices = ((SparseVector) pair._2).indices();
+								int index;
+								for (int j = 0; j < indices.length; j++) {
 									for (int i = 0; i < row; i++) {
-										sumQtAPartial[row * j + i] += Q[i] * A[j];
+										index = indices[j];
+										sumQtAPartial[row * index + i] += Q[i] * A[index];
 									}
+								}
+								for (int i = 0; i < row; i++) {
+									sumQPartial[i] += Q[i];
 								}
 
 							}
-							
+
+							sumQ.add(sumQPartial);
 							sumQtA.add(sumQtAPartial);
 
 						}
 
 					});
-			Vector sumQtAres=new DenseVector(sumQtA.value());
-			
+			Vector sumQtAres = new DenseVector(sumQtA.value());
+			Vector sumQres = new DenseVector(sumQ.value());
 
 			double[][] QtA = new double[nPCs + subsample][nCols];
 
 			for (int i = 0; i < (nPCs + subsample); i++) {
 				for (int j = 0; j < nCols; j++) {
-					QtA[i][j] = sumQtAres.getQuick((nPCs + subsample) * j + i);
+					QtA[i][j] = sumQtAres.getQuick((nPCs + subsample) * j + i)
+							- sumQres.getQuick(i) * meanVector.getQuick(j);
 				}
 			}
-			
-			B = new DenseMatrix(QtA);
 
-			
-			org.apache.mahout.math.SingularValueDecomposition SVD = new org.apache.mahout.math.SingularValueDecomposition(
-					B);
+			B = new DenseMatrix(QtA);	
 
-			V = SVD.getS().get(nPCs-1,nPCs-1);
-			V = Math.round(V*10000.0)/10000.0;
-			System.out.println(V);
+			SVD = new org.apache.mahout.math.SingularValueDecomposition(B);
+			
+			B = B.transpose();
+
+			S = SVD.getS().getQuick(nPCs - 1, nPCs - 1);
+			S = Math.round(S * 10000.0) / 10000.0;
+			System.out.println(S);
 		}
-		
-		return V;
-		
+
+		return S;
+
 	}
 
 	private static void printLogMessage(String argName) {
