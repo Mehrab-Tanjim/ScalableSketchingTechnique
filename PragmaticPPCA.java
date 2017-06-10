@@ -201,7 +201,7 @@ public class PragmaticPPCA implements Serializable {
 		}
 
 		// Setting Spark configuration parameters
-		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA");// .setMaster("local[*]");//
+		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA");//.setMaster("local[*]");//
 																		// TODO
 																		// remove
 																		// this
@@ -443,16 +443,16 @@ public class PragmaticPPCA implements Serializable {
 		 */
 
 		// initialize & broadcast a random seed
-		org.apache.spark.mllib.linalg.Matrix GaussianRandomMatrix = org.apache.spark.mllib.linalg.Matrices.randn(nCols,
-				nPCs + subsample, new SecureRandom());
-		// PCAUtils.printMatrixToFile(GaussianRandomMatrix, OutputFormat.DENSE,
-		// outputPath+File.separator+"Seed");
-		Matrix B = PCAUtils.convertSparkToMahoutMatrix(GaussianRandomMatrix);
-		// Matrix GaussianRandomMatrix=PCAUtils.randomValidationMatrix(nCols,
-		// nPCs+subsample);
-		// Matrix B=GaussianRandomMatrix;
-		// PCAUtils.printMatrixToFile(PCAUtils.convertMahoutToSparkMatrix(GaussianRandomMatrix),
-		// OutputFormat.DENSE, outputPath+File.separator+"Seed");
+//		org.apache.spark.mllib.linalg.Matrix GaussianRandomMatrix = org.apache.spark.mllib.linalg.Matrices.randn(nCols,
+//				nPCs + subsample, new SecureRandom());
+//		// PCAUtils.printMatrixToFile(GaussianRandomMatrix, OutputFormat.DENSE,
+//		// outputPath+File.separator+"Seed");
+//		Matrix B = PCAUtils.convertSparkToMahoutMatrix(GaussianRandomMatrix);
+		 Matrix GaussianRandomMatrix=PCAUtils.randomValidationMatrix(nCols,
+		 nPCs+subsample);
+		 Matrix B=GaussianRandomMatrix;
+//		 PCAUtils.printMatrixToFile(PCAUtils.convertMahoutToSparkMatrix(GaussianRandomMatrix),
+//		 OutputFormat.DENSE, outputPath+File.separator+"Seed");
 
 		Matrix V = null;
 		org.apache.mahout.math.SingularValueDecomposition SVD = null;
@@ -558,7 +558,6 @@ public class PragmaticPPCA implements Serializable {
 		SVD = new org.apache.mahout.math.SingularValueDecomposition(B);
 
 		V = SVD.getV().viewPart(0, nCols, 0, nPCs);
-		// System.out.println(V);
 
 		// clean up
 		seed.destroy();
@@ -859,7 +858,8 @@ public class PragmaticPPCA implements Serializable {
 	}
 
 	private static double norm(JavaSparkContext sc, final JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors,
-			final int nRows, final int nCols, final int nPCs, final int subsample, final int q, final Vector meanVector,
+			final int nRows, final int nCols, final int nPCs, final int subsample, 
+			final int q, final Vector meanVector,
 			final Matrix centralC) {
 		/************************** SSVD PART *****************************/
 
@@ -883,13 +883,13 @@ public class PragmaticPPCA implements Serializable {
 
 		for (int iter = 0; iter < q; iter++) {
 			// V'*omega
-			Matrix VtSeed = V.transpose().times(B);
+			final Matrix VtSeed = V.transpose().times(B);
 			// V*V'*omega
-			Matrix VVtSeed = V.times(VtSeed);
+			final Matrix VVtSeed = V.times(VtSeed);
 			// omega-V*V'*omega
-			Matrix Seed = B.minus(VVtSeed);
+			final Matrix Seed = B.minus(VVtSeed);
 
-			final Vector seedMu = Seed.times(meanVector);
+			final Vector seedMu = Seed.transpose().times(meanVector);
 			final Broadcast<Vector> brSeedMu = sc.broadcast(seedMu);
 			// System.out.println(brSeedMu.value().getQuick(5));
 
@@ -931,11 +931,11 @@ public class PragmaticPPCA implements Serializable {
 					.toJavaRDD().zip(vectors);
 			final Accumulator<double[]> sumQ = sc.accumulator(new double[nPCs + subsample],
 					new VectorAccumulatorParam());
-			final Accumulator<double[]> sumQtA = sc.accumulator(new double[(nPCs + subsample) * nCols],
-					new VectorAccumulatorParam());
+			final Accumulator<double[][]> sumQtA = sc.accumulator(new double[(nPCs + subsample)][ nCols],
+					new MatrixAccumulatorParam());
 
 			final double[] sumQPartial = new double[nPCs + subsample];
-			final double[] sumQtAPartial = new double[(nPCs + subsample) * nCols];
+			final double[][] sumQtAPartial = new double[(nPCs + subsample)][ nCols];
 
 			QnA.foreachPartition(
 					new VoidFunction<Iterator<Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>>>() {
@@ -963,7 +963,7 @@ public class PragmaticPPCA implements Serializable {
 								for (int j = 0; j < indices.length; j++) {
 									for (int i = 0; i < row; i++) {
 										index = indices[j];
-										sumQtAPartial[row * index + i] += Q[i] * A[index];
+										sumQtAPartial[i][index] += Q[i] * A[index];
 									}
 								}
 								for (int i = 0; i < row; i++) {
@@ -978,19 +978,18 @@ public class PragmaticPPCA implements Serializable {
 						}
 
 					});
-			Vector sumQtAres = new DenseVector(sumQtA.value());
-			Vector sumQres = new DenseVector(sumQ.value());
+			final Matrix sumQtAres = new DenseMatrix(sumQtA.value());
+			final Vector sumQres = new DenseVector(sumQ.value());
 
-			double[][] QtA = new double[nPCs + subsample][nCols];
 
-			for (int i = 0; i < (nPCs + subsample); i++) {
-				for (int j = 0; j < nCols; j++) {
-					QtA[i][j] = sumQtAres.getQuick((nPCs + subsample) * j + i)
-							- sumQres.getQuick(i) * meanVector.getQuick(j);
-				}
-			}
-
-			B = new DenseMatrix(QtA);	
+			final Matrix QtAV=sumQtAres.times(V);
+			final Matrix QtAVVt=QtAV.times(V.transpose());
+			final Vector muV=V.transpose().times(meanVector);
+			final Vector muVVt=V.times(muV);
+			final Vector modMeanVector=meanVector.minus(muVVt);
+			final Matrix Qtmu=sumQres.cross(modMeanVector);
+			B=sumQtAres.minus(QtAVVt);
+			B=B.minus(Qtmu);
 
 			SVD = new org.apache.mahout.math.SingularValueDecomposition(B);
 			

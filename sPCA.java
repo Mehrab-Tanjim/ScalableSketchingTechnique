@@ -44,8 +44,6 @@ import org.qcri.sparkpca.FileFormat.OutputFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.esotericsoftware.kryo.io.Output;
-
 import scala.Tuple2;
 
 /**
@@ -59,17 +57,14 @@ import scala.Tuple2;
  * 
  */
 
-public class sPCA implements Serializable {
+public class PragmaticPPCA implements Serializable {
 
-	private final static Logger log = LoggerFactory.getLogger(sPCA.class);// getLogger(SparkPCA.class);
-	static int q=2;
+	private final static Logger log = LoggerFactory.getLogger(PragmaticPPCA.class);// getLogger(SparkPCA.class);
 	private final static boolean CALCULATE_ERR_ATTHEEND = false;
-	static double k_plus_one_singular_value = 0;
-	static double tolerance = 0.05;
-	static int nClusters = 4;
-	static int subsample = 10;
+
 	static String dataset = "Untitled";
 	static long startTime, endTime, totalTime;
+	public static int nClusters = 4;
 	public static Stat stat = new Stat();
 
 	public static void main(String[] args) throws FileNotFoundException {
@@ -82,6 +77,11 @@ public class sPCA implements Serializable {
 		final int nRows;
 		final int nCols;
 		final int nPCs;
+		final int q;// default
+		final double k_plus_one_singular_value;
+		final double tolerance;
+		final int subsample;
+
 		try {
 			inputPath = System.getProperty("i");
 			if (inputPath == null)
@@ -119,18 +119,27 @@ public class sPCA implements Serializable {
 			printLogMessage("kSingularValue");
 			return;
 		}
-		
-		try {
-			q = Integer.parseInt(System.getProperty("q"));
-			System.out.println("No of q is set to" + q);
-		} catch (Exception e) {
-			log.warn("q size is set to default: " + q);
-		}
 
 		try {
 			tolerance = Double.parseDouble(System.getProperty("tolerance"));
 		} catch (Exception e) {
 			printLogMessage("tolerance");
+			return;
+		}
+
+		try {
+			subsample = Integer.parseInt(System.getProperty("subSample"));
+			System.out.println("Subsample is set to" + subsample);
+		} catch (Exception e) {
+			printLogMessage("subsample");
+			return;
+		}
+
+		try {
+			q = Integer.parseInt(System.getProperty("q"));
+			System.out.println("No of q is set to" + q);
+		} catch (Exception e) {
+			printLogMessage("q");
 			return;
 		}
 
@@ -149,34 +158,9 @@ public class sPCA implements Serializable {
 		/**
 		 * Defaults for optional arguments
 		 */
-		double errRate = 1;
 		int maxIterations = 3;
 		OutputFormat outputFileFormat = OutputFormat.DENSE;
 		int computeProjectedMatrix = 0;
-
-		try {
-			errRate = Float.parseFloat(System.getProperty("errSampleRate"));
-		} catch (Exception e) {
-
-			int length = String.valueOf(nRows).length();
-			if (length <= 4)
-				errRate = 1;
-			else
-				errRate = 1 / Math.pow(10, length - 4);
-			log.warn("error sampling rate set to: errSampleRate=" + errRate);
-		}
-
-		try {
-			subsample = Integer.parseInt(System.getProperty("subSample"));
-			System.out.println("Subsample is set to" + subsample);
-		} catch (Exception e) {
-
-		}
-
-		if ((nPCs + subsample) >= nCols) {
-			subsample = nCols - nPCs;
-			log.warn("Subsample is set to default");
-		}
 
 		try {
 			nClusters = Integer.parseInt(System.getProperty("clusters"));
@@ -217,19 +201,20 @@ public class sPCA implements Serializable {
 		}
 
 		// Setting Spark configuration parameters
-		SparkConf conf = new SparkConf().setAppName("sPCA");//.setMaster("local[*]");// TODO
-																							// remove
-																							// this
-																							// part
-																							// for
-																							// building
+		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA");//.setMaster("local[*]");//
+																		// TODO
+																		// remove
+																		// this
+																		// part
+																		// for
+																		// building
 		conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer");
 		conf.set("spark.kryoserializer.buffer.max", "128m");
 		JavaSparkContext sc = new JavaSparkContext(conf);
 
 		// compute principal components
-		computePrincipalComponents(sc, inputPath, outputPath, nRows, nCols, nPCs, k_plus_one_singular_value, errRate,
-				maxIterations, computeProjectedMatrix);
+		computePrincipalComponents(sc, inputPath, outputPath, nRows, nCols, nPCs, subsample, tolerance,
+				k_plus_one_singular_value, q, maxIterations, computeProjectedMatrix);
 
 		// log.info("Principal components computed successfully ");
 	}
@@ -257,11 +242,12 @@ public class sPCA implements Serializable {
 	 *            Maximum number of iterations before terminating
 	 * @return Matrix of size nCols X nPCs having the desired principal
 	 *         components
-	 * @throws FileNotFoundException 
+	 * @throws FileNotFoundException
 	 */
 	public static org.apache.spark.mllib.linalg.Matrix computePrincipalComponents(JavaSparkContext sc, String inputPath,
-			String outputPath, final int nRows, final int nCols, final int nPCs, final double k_plus_one_singular_value,
-			final double errRate, final int maxIterations, final int computeProjectedMatrix) throws FileNotFoundException {
+			String outputPath, final int nRows, final int nCols, final int nPCs, final int subsample,
+			final double tolerance, final double k_plus_one_singular_value, final int q, final int maxIterations,
+			final int computeProjectedMatrix) throws FileNotFoundException {
 
 		/**
 		 * preprocess the data
@@ -380,14 +366,14 @@ public class sPCA implements Serializable {
 
 		stat.totalRunTime = stat.preprocessTime;
 
-		stat.appName = "sPCA";
+		stat.appName = "pragmaticPPCA";
 		stat.dataSet = dataset;
 		stat.nRows = nRows;
 		stat.nCols = nCols;
 
 		// compute principal components
 		computePrincipalComponents(sc, vectors, br_ym_mahout, meanVector, norm2, outputPath, nRows, nCols, nPCs,
-				errRate, maxIterations, computeProjectedMatrix);
+				subsample, tolerance, k_plus_one_singular_value, q, maxIterations, computeProjectedMatrix);
 
 		// count the average ppca runtime
 
@@ -426,17 +412,20 @@ public class sPCA implements Serializable {
 	 *            Maximum number of iterations before terminating
 	 * @return Matrix of size nCols X nPCs having the desired principal
 	 *         components
-	 * @throws FileNotFoundException 
+	 * @throws FileNotFoundException
 	 */
 	public static org.apache.spark.mllib.linalg.Matrix computePrincipalComponents(JavaSparkContext sc,
 			JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors, final Broadcast<Vector> br_ym_mahout,
 			final Vector meanVector, double norm2, String outputPath, final int nRows, final int nCols, final int nPCs,
-			final double errRate, final int maxIterations, final int computeProjectedMatrix) throws FileNotFoundException {
+			final int subsample, final double tolerance, final double k_plus_one_singular_value, final int q,
+			final int maxIterations, final int computeProjectedMatrix) throws FileNotFoundException {
 
 		startTime = System.currentTimeMillis();
 
-		/************************** SSVD PART *****************************/		
-		 
+		/************************** SSVD PART *****************************/
+
+		
+
 		endTime = System.currentTimeMillis();
 		totalTime = endTime - startTime;
 		stat.sketchTime = (double) totalTime / 1000.0;
@@ -445,16 +434,16 @@ public class sPCA implements Serializable {
 		System.out.println("Rows: " + nRows + ", Columns " + nCols);
 
 		startTime = System.currentTimeMillis();
-		
 		Matrix centralC= PCAUtils.randomMatrix(nCols, nPCs);	
 		//PCAUtils.printMatrixToFile(PCAUtils.convertMahoutToSparkMatrix(centralC), OutputFormat.DENSE, outputPath+File.separator+"Seed");
 		double  ss= PCAUtils.randSS();		
 		//System.out.println(ss);
+
 		JavaRDD<org.apache.spark.mllib.linalg.Vector> recon_error;
 		double spectral_error;
 		double error;
 		Vector muVVt;
-		Matrix V;
+
 		// initial CtC
 		Matrix centralCtC = centralC.transpose().times(centralC);
 
@@ -673,60 +662,8 @@ public class sPCA implements Serializable {
 				// log.info("Computing the error at round " + round + " ...");
 				System.out.println("Computing the error at round " + round + " ...");
 
-				V = new org.apache.mahout.math.SingularValueDecomposition(centralC).getU();
-
-				//VVt = V.times(V.transpose());
-				Vector temp=V.transpose().times(meanVector);
-				muVVt = V.times(temp);
-
-				final Broadcast<Matrix> brV = sc.broadcast(V);
-				final Broadcast<Vector> brMuVVt = sc.broadcast(muVVt);
-
-				recon_error = vectors.map(
-						new Function<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>() {
-
-							@Override
-							public org.apache.spark.mllib.linalg.Vector call(org.apache.spark.mllib.linalg.Vector arg0)
-									throws Exception {
-								// TODO Auto-generated method stub
-								double[] y = new double[nCols];
-								double[] values = arg0.toArray();// How does
-																	// this save
-																	// time??
-								double[] temp=new double[nPCs];
-								int[] indices = ((SparseVector) arg0).indices();
-								int index;
-								double value = 0;
-
-								for (int j = 0; j < (nPCs); j++) {
-									
-									for (int i = 0; i < indices.length; i++) {
-										index = indices[i];
-										temp[j] += values[index] * brV.value().getQuick(index, j);//A*V
-									}
-									
-									
-								}
-								
-								for (int k = 0; k < (nCols); k++) {
-									
-									for(int j=0;j<nPCs;j++){
-										value+=temp[j]* brV.value().getQuick(k, j);//transpose
-									}
-									
-									y[k] = values[k] - value - br_ym_mahout.value().getQuick(k)
-											+ brMuVVt.value().getQuick(k);
-									value = 0;
-								}
-
-								return Vectors.dense(y);
-							}
-
-						});
-				
-				//the following subsample is fixed
-				spectral_error = new Norm().spectralNorm(sc, recon_error, nRows, nCols, 1, 100, q,
-						outputPath,"Reconstruction Error after "+round+" iteration");
+				// the following subsample is fixed
+				spectral_error = norm(sc, vectors, nRows, nCols, 1, 100, q, meanVector, centralC);
 				error = (spectral_error - k_plus_one_singular_value) / k_plus_one_singular_value;
 
 				stat.errorList.add((Double) error);
@@ -741,27 +678,157 @@ public class sPCA implements Serializable {
 			 */
 			startTime = System.currentTimeMillis();
 		}
-		if (computeProjectedMatrix == 1) {
-			// 7. Compute Projected Matrix Job: The job multiplies the input
-			// matrix Y with the principal components C to get the Projected
-			// vectors
-			final Broadcast<Matrix> br_centralC = sc.broadcast(centralC);
-			JavaRDD<org.apache.spark.mllib.linalg.Vector> projectedVectors = vectors
-					.map(new Function<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>() {
-
-						public org.apache.spark.mllib.linalg.Vector call(org.apache.spark.mllib.linalg.Vector yi)
-								throws Exception {
-
-							return PCAUtils.sparseVectorTimesMatrix(yi, br_centralC.value());
-						}
-					});// End Compute Projected Matrix
-			String path = outputPath + File.separator + "ProjectedMatrix";
-			projectedVectors.saveAsTextFile(path);
-		}
 		// return the actual PC not the principal subspace
 		stat.nIter = round;
 		return PCAUtils
 				.convertMahoutToSparkMatrix(new org.apache.mahout.math.SingularValueDecomposition(centralC).getU());
+
+	}
+
+	private static double norm(JavaSparkContext sc, final JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors,
+			final int nRows, final int nCols, final int nPCs, final int subsample, 
+			final int q, final Vector meanVector,
+			final Matrix centralC) {
+		/************************** SSVD PART *****************************/
+
+		/**
+		 * Sketch dimension ,S=nPCs+subsample Sketched matrix, B=A*S; QR
+		 * decomposition, Q=qr(B); SV decomposition, [~,s,V]=svd(Q);
+		 */
+
+		// initialize & broadcast a random seed
+		org.apache.spark.mllib.linalg.Matrix GaussianRandomMatrix = org.apache.spark.mllib.linalg.Matrices.randn(nCols,
+				nPCs + subsample, new SecureRandom());
+		// PCAUtils.printMatrixToFile(GaussianRandomMatrix, OutputFormat.DENSE,
+		// outputPath+File.separator+"Seed");
+		Matrix B = PCAUtils.convertSparkToMahoutMatrix(GaussianRandomMatrix);
+
+		Matrix V = new org.apache.mahout.math.SingularValueDecomposition(centralC).getU();
+
+		org.apache.mahout.math.SingularValueDecomposition SVD = null;
+
+		double S = 0;
+
+		for (int iter = 0; iter < q; iter++) {
+			// V'*omega
+			final Matrix VtSeed = V.transpose().times(B);
+			// V*V'*omega
+			final Matrix VVtSeed = V.times(VtSeed);
+			// omega-V*V'*omega
+			final Matrix Seed = B.minus(VVtSeed);
+
+			final Vector seedMu = Seed.transpose().times(meanVector);
+			final Broadcast<Vector> brSeedMu = sc.broadcast(seedMu);
+			// System.out.println(brSeedMu.value().getQuick(5));
+
+			final Broadcast<Matrix> seed = sc.broadcast(Seed);
+
+			JavaRDD<org.apache.spark.mllib.linalg.Vector> Y = vectors
+					.map(new Function<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>() {
+
+						public org.apache.spark.mllib.linalg.Vector call(org.apache.spark.mllib.linalg.Vector arg0)
+								throws Exception {
+							double[] y = new double[nPCs + subsample];
+							double[] values = arg0.toArray();// TODO check does
+																// it
+																// really save
+																// time?!?!
+
+							int[] indices = ((SparseVector) arg0).indices();
+							int index;
+							double value = 0;
+							for (int j = 0; j < (nPCs + subsample); j++) {
+								for (int i = 0; i < indices.length; i++) {
+									index = indices[i];
+									value += values[index] * seed.value().getQuick(index, j);
+								}
+								y[j] = value - brSeedMu.value().getQuick(j);
+								value = 0;
+							}
+
+							return Vectors.dense(y);
+
+						}
+					});
+
+			// QR decomposition of B
+			QRDecomposition<RowMatrix, org.apache.spark.mllib.linalg.Matrix> QR = new RowMatrix(Y.rdd())
+					.tallSkinnyQR(true);
+
+			JavaPairRDD<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> QnA = QR.Q().rows()
+					.toJavaRDD().zip(vectors);
+			final Accumulator<double[]> sumQ = sc.accumulator(new double[nPCs + subsample],
+					new VectorAccumulatorParam());
+			final Accumulator<double[][]> sumQtA = sc.accumulator(new double[(nPCs + subsample)][ nCols],
+					new MatrixAccumulatorParam());
+
+			final double[] sumQPartial = new double[nPCs + subsample];
+			final double[][] sumQtAPartial = new double[(nPCs + subsample)][ nCols];
+
+			QnA.foreachPartition(
+					new VoidFunction<Iterator<Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>>>() {
+
+						@Override
+						public void call(
+								Iterator<Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>> arg0)
+								throws Exception {
+
+							Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> pair;
+							double[] A = null;
+							double[] Q = null;
+							while (arg0.hasNext()) {
+								// lol mistake
+								pair = arg0.next();
+								A = pair._2.toArray();// TODO check does it
+														// really
+														// save time, and
+														// why?!?!?!
+								Q = pair._1.toArray();
+
+								int row = nPCs + subsample;
+								int[] indices = ((SparseVector) pair._2).indices();
+								int index;
+								for (int j = 0; j < indices.length; j++) {
+									for (int i = 0; i < row; i++) {
+										index = indices[j];
+										sumQtAPartial[i][index] += Q[i] * A[index];
+									}
+								}
+								for (int i = 0; i < row; i++) {
+									sumQPartial[i] += Q[i];
+								}
+
+							}
+
+							sumQ.add(sumQPartial);
+							sumQtA.add(sumQtAPartial);
+
+						}
+
+					});
+			final Matrix sumQtAres = new DenseMatrix(sumQtA.value());
+			final Vector sumQres = new DenseVector(sumQ.value());
+
+
+			final Matrix QtAV=sumQtAres.times(V);
+			final Matrix QtAVVt=QtAV.times(V.transpose());
+			final Vector muV=V.transpose().times(meanVector);
+			final Vector muVVt=V.times(muV);
+			final Vector modMeanVector=meanVector.minus(muVVt);
+			final Matrix Qtmu=sumQres.cross(modMeanVector);
+			B=sumQtAres.minus(QtAVVt);
+			B=B.minus(Qtmu);
+
+			SVD = new org.apache.mahout.math.SingularValueDecomposition(B);
+			
+			B = B.transpose();
+
+			S = SVD.getS().getQuick(nPCs - 1, nPCs - 1);
+			S = Math.round(S * 10000.0) / 10000.0;
+			System.out.println(S);
+		}
+
+		return S;
 
 	}
 
