@@ -57,7 +57,7 @@ import scala.Tuple2;
  * 
  */
 
-public class PragmaticPPCA implements Serializable {
+public class sPCA implements Serializable {
 
 	private final static Logger log = LoggerFactory.getLogger(PragmaticPPCA.class);// getLogger(SparkPCA.class);
 	private final static boolean CALCULATE_ERR_ATTHEEND = false;
