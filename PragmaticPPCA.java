@@ -201,7 +201,7 @@ public class PragmaticPPCA implements Serializable {
 		}
 
 		// Setting Spark configuration parameters
-		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA");//.setMaster("local[*]");//
+		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA").setMaster("local[*]");//
 																		// TODO
 																		// remove
 																		// this
@@ -923,21 +923,25 @@ public class PragmaticPPCA implements Serializable {
 						}
 					});
 
+			
+			
+			
 			// QR decomposition of B
 			QRDecomposition<RowMatrix, org.apache.spark.mllib.linalg.Matrix> QR = new RowMatrix(Y.rdd())
-					.tallSkinnyQR(true);
+					.tallSkinnyQR(false);
+			Matrix R = PCAUtils.inv(PCAUtils.convertSparkToMahoutMatrix(QR.R())).transpose();
+			final Broadcast<Matrix> br_R = sc.broadcast(R);
 
-			JavaPairRDD<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> QnA = QR.Q().rows()
-					.toJavaRDD().zip(vectors);
-			final Accumulator<double[]> sumQ = sc.accumulator(new double[nPCs + subsample],
-					new VectorAccumulatorParam());
+			final Accumulator<double[]> sumQ = sc.accumulator(new double[nPCs + subsample], new VectorAccumulatorParam());
 			final Accumulator<double[][]> sumQtA = sc.accumulator(new double[(nPCs + subsample)][ nCols],
 					new MatrixAccumulatorParam());
 
 			final double[] sumQPartial = new double[nPCs + subsample];
-			final double[][] sumQtAPartial = new double[(nPCs + subsample)][ nCols];
+			final double[][] sumQtAPartial = new double[(nPCs + subsample) ][ nCols];
 
-			QnA.foreachPartition(
+			final int row = nPCs + subsample;
+			JavaPairRDD<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> YnA = Y.zip(vectors);
+			YnA.foreachPartition(
 					new VoidFunction<Iterator<Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>>>() {
 
 						@Override
@@ -947,19 +951,30 @@ public class PragmaticPPCA implements Serializable {
 
 							Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> pair;
 							double[] A = null;
-							double[] Q = null;
+							double[] Y = null;
+							double[] Q = new double[nCols+subsample];
+							Matrix L=br_R.value();
+							
 							while (arg0.hasNext()) {
 								// lol mistake
 								pair = arg0.next();
-								A = pair._2.toArray();// TODO check does it
-														// really
-														// save time, and
-														// why?!?!?!
-								Q = pair._1.toArray();
-
-								int row = nPCs + subsample;
+								A = pair._2.toArray();// TODO check does it really
+														// save time, and why?!?!?!
+								Y = pair._1.toArray();
+								
+							
 								int[] indices = ((SparseVector) pair._2).indices();
 								int index;
+								double value;//LOLOLOLOLOLOLOL
+								
+								for (int k = 0; k < row; k++) {
+									value = 0;
+									for (int j = 0; j < row; j++) {
+										value += L.getQuick(k, j) * Y[j];
+									}
+									Q[k] = value;
+								}
+								
 								for (int j = 0; j < indices.length; j++) {
 									for (int i = 0; i < row; i++) {
 										index = indices[j];
@@ -978,6 +993,7 @@ public class PragmaticPPCA implements Serializable {
 						}
 
 					});
+			
 			final Matrix sumQtAres = new DenseMatrix(sumQtA.value());
 			final Vector sumQres = new DenseVector(sumQ.value());
 
