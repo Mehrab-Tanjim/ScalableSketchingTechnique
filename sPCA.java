@@ -201,7 +201,7 @@ public class sPCA implements Serializable {
 		}
 
 		// Setting Spark configuration parameters
-		SparkConf conf = new SparkConf().setAppName("sPCA");//.setMaster("local[*]");//
+		SparkConf conf = new SparkConf().setAppName("sPCA").setMaster("local[*]");//
 																		// TODO
 																		// remove
 																		// this
@@ -714,9 +714,9 @@ public class sPCA implements Serializable {
 			// V*V'*omega
 			final Matrix VVtSeed = V.times(VtSeed);
 			// omega-V*V'*omega
-			final Matrix Seed = B.minus(VVtSeed);
+			Matrix Seed = B.minus(VVtSeed);
 
-			final Vector seedMu = Seed.transpose().times(meanVector);
+			Vector seedMu = Seed.transpose().times(meanVector);
 			final Broadcast<Vector> brSeedMu = sc.broadcast(seedMu);
 			// System.out.println(brSeedMu.value().getQuick(5));
 
@@ -756,8 +756,16 @@ public class sPCA implements Serializable {
 			// QR decomposition of B
 			QRDecomposition<RowMatrix, org.apache.spark.mllib.linalg.Matrix> QR = new RowMatrix(Y.rdd())
 					.tallSkinnyQR(false);
-			Matrix R = PCAUtils.inv(PCAUtils.convertSparkToMahoutMatrix(QR.R())).transpose();
-			final Broadcast<Matrix> br_R = sc.broadcast(R);
+			Matrix R = PCAUtils.inv(PCAUtils.convertSparkToMahoutMatrix(QR.R()));
+			
+			// omega-V*V'*omega
+			Seed = B.times(R);
+
+			seedMu = Seed.transpose().times(meanVector);
+			final Broadcast<Vector> brSeedMu_R = sc.broadcast(seedMu);
+			// System.out.println(brSeedMu.value().getQuick(5));
+
+			final Broadcast<Matrix> seed_R = sc.broadcast(Seed);
 
 			final Accumulator<double[]> sumQ = sc.accumulator(new double[nPCs + subsample], new VectorAccumulatorParam());
 			final Accumulator<double[][]> sumQtA = sc.accumulator(new double[(nPCs + subsample)][ nCols],
@@ -767,40 +775,42 @@ public class sPCA implements Serializable {
 			final double[][] sumQtAPartial = new double[(nPCs + subsample) ][ nCols];
 
 			final int row = nPCs + subsample;
-			JavaPairRDD<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> YnA = Y.zip(vectors);
-			YnA.foreachPartition(
-					new VoidFunction<Iterator<Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>>>() {
+			
+			vectors.foreachPartition(
+					new VoidFunction<Iterator<org.apache.spark.mllib.linalg.Vector>>() {
 
 						@Override
 						public void call(
-								Iterator<Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector>> arg0)
+								Iterator<org.apache.spark.mllib.linalg.Vector> arg0)
 								throws Exception {
 
-							Tuple2<org.apache.spark.mllib.linalg.Vector, org.apache.spark.mllib.linalg.Vector> pair;
-							double[] A = null;
-							double[] Y = null;
-							double[] Q = new double[nCols+subsample];
-							Matrix L=br_R.value();
+							
+							org.apache.spark.mllib.linalg.Vector Avec = null;
+							double[] Q = new double[nPCs+subsample];
+							double[] A=null;
+							
 							
 							while (arg0.hasNext()) {
 								// lol mistake
-								pair = arg0.next();
-								A = pair._2.toArray();// TODO check does it really
-														// save time, and why?!?!?!
-								Y = pair._1.toArray();
+								Avec = arg0.next();
 								
-							
-								int[] indices = ((SparseVector) pair._2).indices();
+								A = Avec.toArray();// TODO check does
+																	// it
+																	// really save
+																	// time?!?!
+
+								int[] indices = ((SparseVector) Avec).indices();
 								int index;
-								double value;//LOLOLOLOLOLOLOL
-								
-								for (int k = 0; k < row; k++) {
-									value = 0;
-									for (int j = 0; j < row; j++) {
-										value += L.getQuick(k, j) * Y[j];
+								double value = 0;
+								for (int j = 0; j < (nPCs + subsample); j++) {
+									for (int i = 0; i < indices.length; i++) {
+										index = indices[i];
+										value += A[index] * seed_R.value().getQuick(index, j);
 									}
-									Q[k] = value;
+									Q[j] = value - brSeedMu_R.value().getQuick(j);
+									value = 0;
 								}
+								
 								
 								for (int j = 0; j < indices.length; j++) {
 									for (int i = 0; i < row; i++) {
