@@ -721,7 +721,6 @@ public class sPCA implements Serializable {
 
 			final Broadcast<Matrix> seed = sc.broadcast(Seed);
 
-			int count = 0;
 
 			JavaRDD<Matrix> Rs = vectors.glom().map(new Function<List<org.apache.spark.mllib.linalg.Vector>, Matrix>() {
 
