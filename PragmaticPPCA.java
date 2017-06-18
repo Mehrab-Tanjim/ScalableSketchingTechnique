@@ -54,14 +54,14 @@ import scala.Tuple2;
  * sPCA: PPCA on top of Spark
  * 
  * 
- * @author Tarek Elgamal
+ * @author Mehrab Tanjim
  * 
  */
 
 public class PragmaticPPCA implements Serializable {
 
 	private final static Logger log = LoggerFactory.getLogger(PragmaticPPCA.class);// getLogger(SparkPCA.class);
-	private final static boolean CALCULATE_ERR_ATTHEEND = false;
+
 
 	static String dataset = "Untitled";
 	static long startTime, endTime, totalTime;
@@ -82,6 +82,7 @@ public class PragmaticPPCA implements Serializable {
 		final double k_plus_one_singular_value;
 		final double tolerance;
 		final int subsample;
+		final int subsampleNorm;
 
 		try {
 			inputPath = System.getProperty("i");
@@ -135,6 +136,14 @@ public class PragmaticPPCA implements Serializable {
 			printLogMessage("subsample");
 			return;
 		}
+		
+		try {
+			subsampleNorm = Integer.parseInt(System.getProperty("subSampleNorm"));
+			System.out.println("SubsampleNorm is set to" + subsampleNorm);
+		} catch (Exception e) {
+			printLogMessage("subsampleNorm");
+			return;
+		}
 
 		try {
 			q = Integer.parseInt(System.getProperty("q"));
@@ -159,9 +168,9 @@ public class PragmaticPPCA implements Serializable {
 		/**
 		 * Defaults for optional arguments
 		 */
-		int maxIterations = 3;
+		int maxIterations = 50;
 		OutputFormat outputFileFormat = OutputFormat.DENSE;
-		int computeProjectedMatrix = 0;
+		int calculateError = 0;
 
 		try {
 			nClusters = Integer.parseInt(System.getProperty("clusters"));
@@ -195,14 +204,14 @@ public class PragmaticPPCA implements Serializable {
 		}
 
 		try {
-			computeProjectedMatrix = Integer.parseInt(System.getProperty("computeProjectedMatrix"));
+			calculateError = Integer.parseInt(System.getProperty("calculateError"));
 		} catch (Exception e) {
 			log.warn(
 					"Projected Matrix will not be computed, the output path will contain the principal components only");
 		}
 
 		// Setting Spark configuration parameters
-		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA").setMaster("local[*]");//
+		SparkConf conf = new SparkConf().setAppName("pragmaticPPCA");//.setMaster("local[*]");//
 		// TODO
 		// remove
 		// this
@@ -215,7 +224,7 @@ public class PragmaticPPCA implements Serializable {
 
 		// compute principal components
 		computePrincipalComponents(sc, inputPath, outputPath, nRows, nCols, nPCs, subsample, tolerance,
-				k_plus_one_singular_value, q, maxIterations, computeProjectedMatrix);
+				k_plus_one_singular_value, q, maxIterations, calculateError, subsampleNorm);
 
 		// log.info("Principal components computed successfully ");
 	}
@@ -248,7 +257,7 @@ public class PragmaticPPCA implements Serializable {
 	public static org.apache.spark.mllib.linalg.Matrix computePrincipalComponents(JavaSparkContext sc, String inputPath,
 			String outputPath, final int nRows, final int nCols, final int nPCs, final int subsample,
 			final double tolerance, final double k_plus_one_singular_value, final int q, final int maxIterations,
-			final int computeProjectedMatrix) throws FileNotFoundException {
+			final int calculateError, final int subsampleNorm) throws FileNotFoundException {
 
 		/**
 		 * preprocess the data
@@ -374,7 +383,8 @@ public class PragmaticPPCA implements Serializable {
 
 		// compute principal components
 		computePrincipalComponents(sc, vectors, br_ym_mahout, meanVector, norm2, outputPath, nRows, nCols, nPCs,
-				subsample, tolerance, k_plus_one_singular_value, q, maxIterations, computeProjectedMatrix);
+				subsample, tolerance, k_plus_one_singular_value, q, maxIterations,
+				calculateError,subsampleNorm);
 
 		// count the average ppca runtime
 
@@ -419,14 +429,14 @@ public class PragmaticPPCA implements Serializable {
 			JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors, final Broadcast<Vector> br_ym_mahout,
 			final Vector meanVector, double norm2, String outputPath, final int nRows, final int nCols, final int nPCs,
 			final int subsample, final double tolerance, final double k_plus_one_singular_value, final int q,
-			final int maxIterations, final int computeProjectedMatrix) throws FileNotFoundException {
+			final int maxIterations, final int calculateError, final int subsampleNorm) throws FileNotFoundException {
 
 		startTime = System.currentTimeMillis();
 
 		/************************** SSVD PART *****************************/
 
 		/**
-		 * Sketch dimension ,S=nPCs+subsample Sketched matrix, B=A*S; QR
+		 * Sketch dimension ,S=s Sketched matrix, B=A*S; QR
 		 * decomposition, Q=qr(B); SV decomposition, [~,s,V]=svd(Q);
 		 */
 
@@ -439,7 +449,7 @@ public class PragmaticPPCA implements Serializable {
 		// final Matrix seedMahoutMatrix =
 		// PCAUtils.convertSparkToMahoutMatrix(GaussianRandomMatrix);
 		/**
-		 * Sketch dimension ,S=nPCs+subsample Sketched matrix, B=A*S; QR
+		 * Sketch dimension ,S=s Sketched matrix, B=A*S; QR
 		 * decomposition, Q=qr(B); SV decomposition, [~,s,V]=svd(Q);
 		 */
 
@@ -447,9 +457,9 @@ public class PragmaticPPCA implements Serializable {
 		 org.apache.spark.mllib.linalg.Matrix GaussianRandomMatrix =
 		 org.apache.spark.mllib.linalg.Matrices.randn(nCols,
 		 nPCs + subsample, new SecureRandom());
-		  PCAUtils.printMatrixToFile(GaussianRandomMatrix,
-		  OutputFormat.DENSE,
-		  outputPath+File.separator+"Seed");
+//		  PCAUtils.printMatrixToFile(GaussianRandomMatrix,
+//		  OutputFormat.DENSE,
+//		  outputPath+File.separator+"Seed");
 		 Matrix B = PCAUtils.convertSparkToMahoutMatrix(GaussianRandomMatrix);
 //		Matrix GaussianRandomMatrix = PCAUtils.randomValidationMatrix(nCols, nPCs + subsample);
 //		Matrix B = GaussianRandomMatrix;
@@ -464,65 +474,85 @@ public class PragmaticPPCA implements Serializable {
 		Vector seedMu = B.transpose().times(meanVector);
 		final Broadcast<Vector> brSeedMu = sc.broadcast(seedMu);
 				
-		
-		final int row = nPCs + subsample;
-		
-		final Accumulator<double[][]> sumYtY = sc.accumulator(new double[row][row],
+	   	
+		final int s=nPCs+subsample;
+		final Accumulator<double[][]> matrixAccumYtY = sc.accumulator(new double[s][s],
 				new MatrixAccumulatorParam());
-		final double[][] sumYtYPartial = new double[row][row];
+		final Accumulator<double[]> matrixAccumY = sc.accumulator(new double[s], new VectorAccumulatorParam());
 
-		final double[] Y = new double[nPCs + subsample];
+		/*
+		 * Initialize the output matrices and vectors once in order to avoid
+		 * generating massive intermediate data in the workers
+		 */
+		final double[][] resArrayYtY = new double[s][s];
+		final double[] resArrayY = new double[s];
+
+		/*
+		 * Used to sum the vectors in one partition.
+		 */
+		final double[][] internalSumYtY = new double[s][s];
+		final double[] internalSumY = new double[s];
 
 		vectors.foreachPartition(new VoidFunction<Iterator<org.apache.spark.mllib.linalg.Vector>>() {
 
-			@Override
 			public void call(Iterator<org.apache.spark.mllib.linalg.Vector> arg0) throws Exception {
-
-				org.apache.spark.mllib.linalg.Vector Avec = null;
-			
-				double[] A = null;
-
+				org.apache.spark.mllib.linalg.Vector yi;
 				while (arg0.hasNext()) {
-					// lol mistake
-					Avec = arg0.next();
+					yi = arg0.next();
 
-					A = Avec.toArray();// TODO check does
-										// it
-										// really save
-										// time?!?!
+					/*
+					 * Perform in-memory matrix multiplication xi = yi' *
+					 * Y2X
+					 */
+					PCAUtils.sparseVectorTimesMatrix(yi, seed.value(), resArrayY);
 
-					int[] indices = ((SparseVector) Avec).indices();
-					int index;
-					double value = 0;
-					for (int j = 0; j < (nPCs + subsample); j++) {
-						for (int i = 0; i < indices.length; i++) {
-							index = indices[i];
-							value += A[index] * seed.value().getQuick(index, j);
-						}
-						Y[j] = value - brSeedMu.value().getQuick(j);
-						value = 0;
-					}
+					// get only the sparse indices
+				
+					PCAUtils.outerProductArrayInput(resArrayY, brSeedMu.value(), resArrayY,
+							brSeedMu.value(), resArrayYtY);
+					int i, j;
+
+					// add the sparse indices only
 					
-					for (int j = 0; j < row; j++) {
-						for (int i = 0; i < row; i++) {
-							sumYtYPartial[i][j] += Y[i] * Y[j];
+					for (i = 0; i < s; i++) {
+						internalSumY[i] += resArrayY[i];
+						for (j = 0; j < s; j++) {
+							internalSumYtY[i][j] += resArrayYtY[i][j];
+							resArrayYtY[i][j] = 0; // reset it
 						}
-					}
-					
 
+					}
 				}
-
-				sumYtY.add(sumYtYPartial);
-
+				matrixAccumY.add(internalSumY);
+				matrixAccumYtY.add(internalSumYtY);
 			}
 
-		});
+		});// end X'X and Y'X Job
 
-		final Matrix sumYtYres = new DenseMatrix(sumYtY.value());
+		/*
+		 * Get the values of the accumulators.
+		 */
+		Matrix centralYtY = new DenseMatrix(matrixAccumYtY.value());
+		Vector centralSumY = new DenseVector(matrixAccumY.value());
+
+		/*
+		 * Mi = (Yi-Ym)' x (Xi-Xm) = Yi' x (Xi-Xm) - Ym' x (Xi-Xm)
+		 * 
+		 * M = Sum(Mi) = Sum(Yi' x (Xi-Xm)) - Ym' x (Sum(Xi)-N*Xm)
+		 * 
+		 * The first part is done in the previous job and the second in the
+		 * following method
+		 */
+		centralYtY = PCAUtils.updateXtXAndYtx(centralYtY, centralSumY, seedMu, seedMu, nRows);
+		
+		seed.destroy();
+		
+		brSeedMu.destroy();
 		
 		
 		
-		Matrix R=new org.apache.mahout.math.CholeskyDecomposition(sumYtYres,false).getL().transpose();			
+		
+		Matrix R=new org.apache.mahout.math.CholeskyDecomposition(centralYtY,false).getL().transpose();			
 			
 		R = PCAUtils.inv(R);
 		
@@ -532,80 +562,86 @@ public class PragmaticPPCA implements Serializable {
 		final Broadcast<Vector> brSeedMu_R = sc.broadcast(seedMu);
 		// System.out.println(brSeedMu.value().getQuick(5));
 
-		final Broadcast<Matrix> seed_R = sc.broadcast(Seed);
-	
-		final Accumulator<double[]> sumQ = sc.accumulator(new double[nPCs + subsample],
-				new VectorAccumulatorParam());
-		final Accumulator<double[][]> sumQtA = sc.accumulator(new double[(nPCs + subsample)][nCols],
+		final Broadcast<Matrix> seed_R = sc.broadcast(Seed);		
+		
+		
+		
+		final Accumulator<double[][]> matrixAccumAtQ = sc.accumulator(new double[nCols][s],
 				new MatrixAccumulatorParam());
+		final Accumulator<double[]> matrixAccumQ = sc.accumulator(new double[s], new VectorAccumulatorParam());
 
-		final double[] sumQPartial = new double[nPCs + subsample];
-		final double[][] sumQtAPartial = new double[(nPCs + subsample)][nCols];
-		
-		final double[] Q = new double[nPCs + subsample];
-		
+		/*
+		 * Initialize the output matrices and vectors once in order to avoid
+		 * generating massive intermediate data in the workers
+		 */
+		final double[][] resArrayAtQ = new double[nCols][s];
+		final double[] resArrayQ = new double[s];
+
+		/*
+		 * Used to sum the vectors in one partition.
+		 */
+		final double[][] internalSumAtQ = new double[nCols][s];
+		final double[] internalSumQ = new double[s];
+
 		vectors.foreachPartition(new VoidFunction<Iterator<org.apache.spark.mllib.linalg.Vector>>() {
 
-			@Override
 			public void call(Iterator<org.apache.spark.mllib.linalg.Vector> arg0) throws Exception {
-
-				org.apache.spark.mllib.linalg.Vector Avec = null;
-				
-				double[] A = null;
-
+				org.apache.spark.mllib.linalg.Vector yi;
 				while (arg0.hasNext()) {
-					// lol mistake
-					Avec = arg0.next();
+					yi = arg0.next();
 
-					A = Avec.toArray();// TODO check does
-										// it
-										// really save
-										// time?!?!
+					/*
+					 * Perform in-memory matrix multiplication xi = yi' *
+					 * Y2X
+					 */
+					PCAUtils.sparseVectorTimesMatrix(yi, seed_R.value(), resArrayQ);
 
-					int[] indices = ((SparseVector) Avec).indices();
-					int index;
-					double value = 0;
-					for (int j = 0; j < (nPCs + subsample); j++) {
-						for (int i = 0; i < indices.length; i++) {
-							index = indices[i];
-							value += A[index] * seed_R.value().getQuick(index, j);
+					// get only the sparse indices
+					int[] indices = ((SparseVector) yi).indices();
+
+					PCAUtils.outerProductWithIndices(yi, br_ym_mahout.value(), resArrayQ, brSeedMu_R.value(),
+							resArrayAtQ, indices);
+					
+					int i, j, rowIndexYtX;
+
+					// add the sparse indices only
+					for (i = 0; i < indices.length; i++) {
+						rowIndexYtX = indices[i];
+						for (j = 0; j < s; j++) {
+							internalSumAtQ[rowIndexYtX][j] += resArrayAtQ[rowIndexYtX][j];
+							resArrayAtQ[rowIndexYtX][j] = 0; // reset it
 						}
-						Q[j] = value - brSeedMu_R.value().getQuick(j);
-						value = 0;
-					}
 
-					for (int j = 0; j < indices.length; j++) {
-						for (int i = 0; i < row; i++) {
-							index = indices[j];
-							sumQtAPartial[i][index] += Q[i] * A[index];
-						}
 					}
-					for (int i = 0; i < row; i++) {
-						sumQPartial[i] += Q[i];
-					}
+					for (i = 0; i < s; i++) {
+						internalSumQ[i] += resArrayQ[i];
+						
 
+					}
 				}
-
-				sumQ.add(sumQPartial);
-				sumQtA.add(sumQtAPartial);
-
+				matrixAccumQ.add(internalSumQ);
+				matrixAccumAtQ.add(internalSumAtQ);
 			}
 
-		});
-
-		final Matrix sumQtAres = new DenseMatrix(sumQtA.value());
-		final Vector sumQres = new DenseVector(sumQ.value());
-
+		});// end X'X and Y'X Job
+		seed_R.destroy();
 		
-		final Matrix Qtmu = sumQres.cross(meanVector);
-		B = sumQtAres.minus(Qtmu);
+		brSeedMu_R.destroy();
+		/*
+		 * Get the values of the accumulators.
+		 */
+		Matrix centralAtQ = new DenseMatrix(matrixAccumAtQ.value());
+		Vector centralSumQ = new DenseVector(matrixAccumQ.value());
+		
+		centralAtQ = PCAUtils.updateXtXAndYtx(centralAtQ, centralSumQ, br_ym_mahout.value(), seedMu, nRows);
+		
+		B = centralAtQ.transpose();
 		
 		SVD = new org.apache.mahout.math.SingularValueDecomposition(B);
 
 		V = SVD.getV().viewPart(0, nCols, 0, nPCs);
 
 		// clean up
-		seed.destroy();
 
 		/****************************
 		 * END OF SSVD
@@ -628,7 +664,11 @@ public class PragmaticPPCA implements Serializable {
 		for (int i = nPCs; i < (nPCs + subsample); i++) {
 			ss += latent[i];
 		}
-		ss /= subsample;
+		
+		if(subsample==0)
+			ss=PCAUtils.randSS();
+		else 
+			ss /= subsample;
 
 		// calculate W
 		// (L_tilde-ss_tilde*eye(k)).^0.5
@@ -862,9 +902,7 @@ public class PragmaticPPCA implements Serializable {
 			// log.info("SSSSSSSSSSSSSSSSSSSSSSSSSSSS " + ss + " (" + norm2 + "
 			// + "+ ss2 + " -2* " + xctyt);
 
-			double objective = ss;
-			relChangeInObjective = Math.abs(1 - objective / prevObjective);
-			prevObjective = objective;
+			
 			// log.info("Objective: %.6f relative change: %.6f \n",
 			// objective,relChangeInObjective);
 
@@ -872,13 +910,17 @@ public class PragmaticPPCA implements Serializable {
 			totalTime = endTime - startTime;
 			stat.ppcaIterTime.add((double) totalTime / 1000.0);
 			stat.totalRunTime += (double) totalTime / 1000.0;
+			
+			double objective = ss;
+			relChangeInObjective = Math.abs(1 - objective / prevObjective);
+			prevObjective = objective;
 
-			if (!CALCULATE_ERR_ATTHEEND) {
+			if (calculateError==1) {
 				// log.info("Computing the error at round " + round + " ...");
 				System.out.println("Computing the error at round " + round + " ...");
 
 				// the following subsample is fixed
-				spectral_error = norm(sc, vectors, nRows, nCols, 1, 10, q, meanVector, centralC);
+				spectral_error = norm(sc, vectors, nRows, nCols, 1, subsampleNorm, q, meanVector, centralC);
 				error = (spectral_error - k_plus_one_singular_value) / k_plus_one_singular_value;
 
 				stat.errorList.add((Double) error);
@@ -906,7 +948,7 @@ public class PragmaticPPCA implements Serializable {
 		/************************** SSVD PART *****************************/
 
 		/**
-		 * Sketch dimension ,S=nPCs+subsample Sketched matrix, B=A*S; QR
+		 * Sketch dimension ,S=s Sketched matrix, B=A*S; QR
 		 * decomposition, Q=qr(B); SV decomposition, [~,s,V]=svd(Q);
 		 */
 
@@ -936,68 +978,84 @@ public class PragmaticPPCA implements Serializable {
 			// System.out.println(brSeedMu.value().getQuick(5));
 
 			final Broadcast<Matrix> seed = sc.broadcast(Seed);
-
-			final int row = nPCs + subsample;
 			
-			final Accumulator<double[][]> sumYtY = sc.accumulator(new double[row][row],
+			final int s= nPCs+subsample;
+			final Accumulator<double[][]> matrixAccumYtY = sc.accumulator(new double[s][s],
 					new MatrixAccumulatorParam());
-			final double[][] sumYtYPartial = new double[row][row];
+			final Accumulator<double[]> matrixAccumY = sc.accumulator(new double[s], new VectorAccumulatorParam());
 
-			final double[] Y = new double[nPCs + subsample];
+			/*
+			 * Initialize the output matrices and vectors once in order to avoid
+			 * generating massive intermediate data in the workers
+			 */
+			final double[][] resArrayYtY = new double[s][s];
+			final double[] resArrayY = new double[s];
+
+			/*
+			 * Used to sum the vectors in one partition.
+			 */
+			final double[][] internalSumYtY = new double[s][s];
+			final double[] internalSumY = new double[s];
 
 			vectors.foreachPartition(new VoidFunction<Iterator<org.apache.spark.mllib.linalg.Vector>>() {
 
-				@Override
 				public void call(Iterator<org.apache.spark.mllib.linalg.Vector> arg0) throws Exception {
-
-					org.apache.spark.mllib.linalg.Vector Avec = null;
-					
-					double[] A = null;
-
+					org.apache.spark.mllib.linalg.Vector yi;
 					while (arg0.hasNext()) {
-						// lol mistake
-						Avec = arg0.next();
+						yi = arg0.next();
 
-						A = Avec.toArray();// TODO check does
-											// it
-											// really save
-											// time?!?!
+						/*
+						 * Perform in-memory matrix multiplication xi = yi' *
+						 * Y2X
+						 */
+						PCAUtils.sparseVectorTimesMatrix(yi, seed.value(), resArrayY);
 
-						int[] indices = ((SparseVector) Avec).indices();
-						int index;
-						double value = 0;
-						for (int j = 0; j < (nPCs + subsample); j++) {
-							for (int i = 0; i < indices.length; i++) {
-								index = indices[i];
-								value += A[index] * seed.value().getQuick(index, j);
-							}
-							Y[j] = value - brSeedMu.value().getQuick(j);
-							value = 0;
-						}
+						// get only the sparse indices
+					
+						PCAUtils.outerProductArrayInput(resArrayY, brSeedMu.value(), resArrayY,
+								brSeedMu.value(), resArrayYtY);
+						int i, j;
 
-						for (int j = 0; j < row; j++) {
-							for (int i = 0; i < row; i++) {
-								sumYtYPartial[i][j] += Y[i] * Y[j];
-							}
-						}
+						// add the sparse indices only
 						
+						for (i = 0; i < s; i++) {
+							internalSumY[i] += resArrayY[i];
+							for (j = 0; j < s; j++) {
+								internalSumYtY[i][j] += resArrayYtY[i][j];
+								resArrayYtY[i][j] = 0; // reset it
+							}
 
+						}
 					}
-
-					sumYtY.add(sumYtYPartial);
-
+					matrixAccumY.add(internalSumY);
+					matrixAccumYtY.add(internalSumYtY);
 				}
 
-			});
+			});// end X'X and Y'X Job
 
-			final Matrix sumYtYres = new DenseMatrix(sumYtY.value());
+			/*
+			 * Get the values of the accumulators.
+			 */
+			Matrix centralYtY = new DenseMatrix(matrixAccumYtY.value());
+			Vector centralSumY = new DenseVector(matrixAccumY.value());
+
+			/*
+			 * Mi = (Yi-Ym)' x (Xi-Xm) = Yi' x (Xi-Xm) - Ym' x (Xi-Xm)
+			 * 
+			 * M = Sum(Mi) = Sum(Yi' x (Xi-Xm)) - Ym' x (Sum(Xi)-N*Xm)
+			 * 
+			 * The first part is done in the previous job and the second in the
+			 * following method
+			 */
+			centralYtY = PCAUtils.updateXtXAndYtx(centralYtY, centralSumY, seedMu, seedMu, nRows);
+
 			
-			Matrix R=new org.apache.mahout.math.CholeskyDecomposition(sumYtYres,false).getL().transpose();			
+			Matrix R=new org.apache.mahout.math.CholeskyDecomposition(centralYtY,false).getL().transpose();			
 			
 
 			R = PCAUtils.inv(R);
 			// omega-V*V'*omega
-			Seed = B.times(R);
+			Seed = Seed.times(R);
 
 			seedMu = Seed.transpose().times(meanVector);
 			final Broadcast<Vector> brSeedMu_R = sc.broadcast(seedMu);
@@ -1005,83 +1063,89 @@ public class PragmaticPPCA implements Serializable {
 
 			final Broadcast<Matrix> seed_R = sc.broadcast(Seed);
 
-			final Accumulator<double[]> sumQ = sc.accumulator(new double[nPCs + subsample],
-					new VectorAccumulatorParam());
-			final Accumulator<double[][]> sumQtA = sc.accumulator(new double[(nPCs + subsample)][nCols],
-					new MatrixAccumulatorParam());
+			
 
-			final double[] sumQPartial = new double[nPCs + subsample];
-			final double[][] sumQtAPartial = new double[(nPCs + subsample)][nCols];
-			
-			final double[] Q = new double[nPCs + subsample];
-			
+			final Accumulator<double[][]> matrixAccumAtQ = sc.accumulator(new double[nCols][s],
+					new MatrixAccumulatorParam());
+			final Accumulator<double[]> matrixAccumQ = sc.accumulator(new double[s], new VectorAccumulatorParam());
+
+			/*
+			 * Initialize the output matrices and vectors once in order to avoid
+			 * generating massive intermediate data in the workers
+			 */
+			final double[][] resArrayAtQ = new double[nCols][s];
+			final double[] resArrayQ = new double[s];
+
+			/*
+			 * Used to sum the vectors in one partition.
+			 */
+			final double[][] internalSumAtQ = new double[nCols][s];
+			final double[] internalSumQ = new double[s];
+
 			vectors.foreachPartition(new VoidFunction<Iterator<org.apache.spark.mllib.linalg.Vector>>() {
 
-				@Override
 				public void call(Iterator<org.apache.spark.mllib.linalg.Vector> arg0) throws Exception {
-
-					org.apache.spark.mllib.linalg.Vector Avec = null;
-					
-					double[] A = null;
-
+					org.apache.spark.mllib.linalg.Vector yi;
 					while (arg0.hasNext()) {
-						// lol mistake
-						Avec = arg0.next();
+						yi = arg0.next();
 
-						A = Avec.toArray();// TODO check does
-											// it
-											// really save
-											// time?!?!
+						/*
+						 * Perform in-memory matrix multiplication xi = yi' *
+						 * Y2X
+						 */
+						PCAUtils.sparseVectorTimesMatrix(yi, seed_R.value(), resArrayQ);
 
-						int[] indices = ((SparseVector) Avec).indices();
-						int index;
-						double value = 0;
-						for (int j = 0; j < (nPCs + subsample); j++) {
-							for (int i = 0; i < indices.length; i++) {
-								index = indices[i];
-								value += A[index] * seed_R.value().getQuick(index, j);
+						// get only the sparse indices
+						int[] indices = ((SparseVector) yi).indices();
+
+						PCAUtils.outerProductWithIndices(yi, brSeedMu.value(), resArrayQ, brSeedMu_R.value(),
+								resArrayAtQ, indices);
+						
+						int i, j, rowIndexYtX;
+
+						// add the sparse indices only
+						for (i = 0; i < indices.length; i++) {
+							rowIndexYtX = indices[i];
+							for (j = 0; j < s; j++) {
+								internalSumAtQ[rowIndexYtX][j] += resArrayAtQ[rowIndexYtX][j];
+								resArrayAtQ[rowIndexYtX][j] = 0; // reset it
 							}
-							Q[j] = value - brSeedMu_R.value().getQuick(j);
-							value = 0;
-						}
 
-						for (int j = 0; j < indices.length; j++) {
-							for (int i = 0; i < row; i++) {
-								index = indices[j];
-								sumQtAPartial[i][index] += Q[i] * A[index];
-							}
 						}
-						for (int i = 0; i < row; i++) {
-							sumQPartial[i] += Q[i];
-						}
+						for (i = 0; i < s; i++) {
+							internalSumQ[i] += resArrayQ[i];
+							
 
+						}
 					}
-
-					sumQ.add(sumQPartial);
-					sumQtA.add(sumQtAPartial);
-
+					matrixAccumQ.add(internalSumQ);
+					matrixAccumAtQ.add(internalSumAtQ);
 				}
 
-			});
+			});// end X'X and Y'X Job
 
-			final Matrix sumQtAres = new DenseMatrix(sumQtA.value());
-			final Vector sumQres = new DenseVector(sumQ.value());
-
-			final Matrix QtAV = sumQtAres.times(V);
+			/*
+			 * Get the values of the accumulators.
+			 */
+			Matrix centralAtQ = new DenseMatrix(matrixAccumAtQ.value());
+			Vector centralSumQ = new DenseVector(matrixAccumQ.value());
+			
+			centralAtQ = PCAUtils.updateXtXAndYtx(centralAtQ, centralSumQ, meanVector, seedMu, nRows);
+			
+			centralAtQ=centralAtQ.transpose();
+			
+			final Matrix QtAV = centralAtQ.times(V);
 			final Matrix QtAVVt = QtAV.times(V.transpose());
-			final Vector muV = V.transpose().times(meanVector);
-			final Vector muVVt = V.times(muV);
-			final Vector modMeanVector = meanVector.minus(muVVt);
-			final Matrix Qtmu = sumQres.cross(modMeanVector);
-			B = sumQtAres.minus(QtAVVt);
-			B = B.minus(Qtmu);
+			B = centralAtQ.minus(QtAVVt);
 
 			SVD = new org.apache.mahout.math.SingularValueDecomposition(B);
 
 			B = B.transpose();
 
-			S = SVD.getS().getQuick(nPCs - 1, nPCs - 1);
-			S = Math.round(S * 10000.0) / 10000.0;
+			Double newS = SVD.getS().getQuick(nPCs - 1, nPCs - 1);
+			newS = Math.round(newS * 10000.0) / 10000.0;
+			if(newS==S) break;
+			else S=newS;
 			System.out.println(S);
 		}
 
@@ -1092,6 +1156,6 @@ public class PragmaticPPCA implements Serializable {
 	private static void printLogMessage(String argName) {
 		log.error("Missing arguments -D" + argName);
 		log.info(
-				"Usage: -Di=<path/to/input/matrix> -Do=<path/to/outputfolder> -Drows=<number of rows> -Dcols=<number of columns> -Dpcs=<number of principal components> [-DerrSampleRate=<Error sampling rate>] [-DmaxIter=<max iterations>] [-DoutFmt=<output format>] [-DComputeProjectedMatrix=<0/1 (compute projected matrix or not)>]");
+				"Usage: -Di=<path/to/input/matrix> -Do=<path/to/outputfolder> -Drows=<number of rows> -Dcols=<number of columns> -Dpcs=<number of principal components> [-DerrSampleRate=<Error sampling rate>] [-DmaxIter=<max iterations>] [-DoutFmt=<output format>] [-DcalculateError=<0/1 (compute projected matrix or not)>]");
 	}
 }
