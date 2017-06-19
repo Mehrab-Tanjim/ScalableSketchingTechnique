@@ -54,14 +54,13 @@ import scala.Tuple2;
  * sPCA: PPCA on top of Spark
  * 
  * 
- * @author Tarek Elgamal
+ * @author Mehrab Tanjim
  * 
  */
 
 public class sPCA implements Serializable {
 
-	private final static Logger log = LoggerFactory.getLogger(PragmaticPPCA.class);// getLogger(SparkPCA.class);
-	private final static boolean CALCULATE_ERR_ATTHEEND = false;
+	private final static Logger log = LoggerFactory.getLogger(sPCA.class);// getLogger(SparkPCA.class);
 
 	static String dataset = "Untitled";
 	static long startTime, endTime, totalTime;
@@ -82,6 +81,7 @@ public class sPCA implements Serializable {
 		final double k_plus_one_singular_value;
 		final double tolerance;
 		final int subsample;
+		final int subsampleNorm;
 
 		try {
 			inputPath = System.getProperty("i");
@@ -137,6 +137,14 @@ public class sPCA implements Serializable {
 		}
 
 		try {
+			subsampleNorm = Integer.parseInt(System.getProperty("subSampleNorm"));
+			System.out.println("SubsampleNorm is set to" + subsampleNorm);
+		} catch (Exception e) {
+			printLogMessage("subsampleNorm");
+			return;
+		}
+
+		try {
 			q = Integer.parseInt(System.getProperty("q"));
 			System.out.println("No of q is set to" + q);
 		} catch (Exception e) {
@@ -159,9 +167,9 @@ public class sPCA implements Serializable {
 		/**
 		 * Defaults for optional arguments
 		 */
-		int maxIterations = 3;
+		int maxIterations = 50;
 		OutputFormat outputFileFormat = OutputFormat.DENSE;
-		int computeProjectedMatrix = 0;
+		int calculateError = 0;
 
 		try {
 			nClusters = Integer.parseInt(System.getProperty("clusters"));
@@ -195,14 +203,14 @@ public class sPCA implements Serializable {
 		}
 
 		try {
-			computeProjectedMatrix = Integer.parseInt(System.getProperty("computeProjectedMatrix"));
+			calculateError = Integer.parseInt(System.getProperty("calculateError"));
 		} catch (Exception e) {
 			log.warn(
 					"Projected Matrix will not be computed, the output path will contain the principal components only");
 		}
 
 		// Setting Spark configuration parameters
-		SparkConf conf = new SparkConf().setAppName("sPCA").setMaster("local[*]");//
+		SparkConf conf = new SparkConf().setAppName("sPCA");//.setMaster("local[*]");//
 		// TODO
 		// remove
 		// this
@@ -215,7 +223,7 @@ public class sPCA implements Serializable {
 
 		// compute principal components
 		computePrincipalComponents(sc, inputPath, outputPath, nRows, nCols, nPCs, subsample, tolerance,
-				k_plus_one_singular_value, q, maxIterations, computeProjectedMatrix);
+				k_plus_one_singular_value, q, maxIterations, calculateError, subsampleNorm);
 
 		// log.info("Principal components computed successfully ");
 	}
@@ -248,7 +256,7 @@ public class sPCA implements Serializable {
 	public static org.apache.spark.mllib.linalg.Matrix computePrincipalComponents(JavaSparkContext sc, String inputPath,
 			String outputPath, final int nRows, final int nCols, final int nPCs, final int subsample,
 			final double tolerance, final double k_plus_one_singular_value, final int q, final int maxIterations,
-			final int computeProjectedMatrix) throws FileNotFoundException {
+			final int calculateError, final int subsampleNorm) throws FileNotFoundException {
 
 		/**
 		 * preprocess the data
@@ -367,14 +375,14 @@ public class sPCA implements Serializable {
 
 		stat.totalRunTime = stat.preprocessTime;
 
-		stat.appName = "pragmaticPPCA";
+		stat.appName = "sPCA";
 		stat.dataSet = dataset;
 		stat.nRows = nRows;
 		stat.nCols = nCols;
 
 		// compute principal components
 		computePrincipalComponents(sc, vectors, br_ym_mahout, meanVector, norm2, outputPath, nRows, nCols, nPCs,
-				subsample, tolerance, k_plus_one_singular_value, q, maxIterations, computeProjectedMatrix);
+				subsample, tolerance, k_plus_one_singular_value, q, maxIterations, calculateError, subsampleNorm);
 
 		// count the average ppca runtime
 
@@ -419,11 +427,26 @@ public class sPCA implements Serializable {
 			JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors, final Broadcast<Vector> br_ym_mahout,
 			final Vector meanVector, double norm2, String outputPath, final int nRows, final int nCols, final int nPCs,
 			final int subsample, final double tolerance, final double k_plus_one_singular_value, final int q,
-			final int maxIterations, final int computeProjectedMatrix) throws FileNotFoundException {
+			final int maxIterations, final int calculateError, final int subsampleNorm) throws FileNotFoundException {
 
 		startTime = System.currentTimeMillis();
 
+
 		/************************** SSVD PART *****************************/
+
+		
+
+
+		/****************************
+		 * END OF SSVD
+		 ***********************************/
+
+		/**
+		 * construct smart guess
+		 */
+
+		// calculate ss first
+
 
 		endTime = System.currentTimeMillis();
 		totalTime = endTime - startTime;
@@ -433,16 +456,14 @@ public class sPCA implements Serializable {
 		System.out.println("Rows: " + nRows + ", Columns " + nCols);
 
 		startTime = System.currentTimeMillis();
-		Matrix centralC = PCAUtils.randomMatrix(nCols, nPCs);
-		// PCAUtils.printMatrixToFile(PCAUtils.convertMahoutToSparkMatrix(centralC),
-		// OutputFormat.DENSE, outputPath+File.separator+"Seed");
-		double ss = PCAUtils.randSS();
-		// System.out.println(ss);
 
-		JavaRDD<org.apache.spark.mllib.linalg.Vector> recon_error;
+
+		double ss = PCAUtils.randSS();
+
+		Matrix centralC = PCAUtils.randomMatrix(nCols, nPCs);
+		
 		double spectral_error;
 		double error;
-
 		// initial CtC
 		Matrix centralCtC = centralC.transpose().times(centralC);
 
@@ -646,9 +667,6 @@ public class sPCA implements Serializable {
 			// log.info("SSSSSSSSSSSSSSSSSSSSSSSSSSSS " + ss + " (" + norm2 + "
 			// + "+ ss2 + " -2* " + xctyt);
 
-			double objective = ss;
-			relChangeInObjective = Math.abs(1 - objective / prevObjective);
-			prevObjective = objective;
 			// log.info("Objective: %.6f relative change: %.6f \n",
 			// objective,relChangeInObjective);
 
@@ -657,12 +675,16 @@ public class sPCA implements Serializable {
 			stat.ppcaIterTime.add((double) totalTime / 1000.0);
 			stat.totalRunTime += (double) totalTime / 1000.0;
 
-			if (!CALCULATE_ERR_ATTHEEND) {
+			double objective = ss;
+			relChangeInObjective = Math.abs(1 - objective / prevObjective);
+			prevObjective = objective;
+
+			if (calculateError == 1) {
 				// log.info("Computing the error at round " + round + " ...");
 				System.out.println("Computing the error at round " + round + " ...");
 
 				// the following subsample is fixed
-				spectral_error = norm(sc, vectors, nRows, nCols, 1, 100, q, meanVector, centralC);
+				spectral_error = norm(sc, vectors, nRows, nCols, 1, subsampleNorm, q, meanVector, centralC,br_ym_mahout);
 				error = (spectral_error - k_plus_one_singular_value) / k_plus_one_singular_value;
 
 				stat.errorList.add((Double) error);
@@ -686,12 +708,12 @@ public class sPCA implements Serializable {
 
 	private static double norm(JavaSparkContext sc, final JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors,
 			final int nRows, final int nCols, final int nPCs, final int subsample, final int q, final Vector meanVector,
-			final Matrix centralC) {
+			final Matrix centralC, final Broadcast<Vector> br_ym_mahout) {
 		/************************** SSVD PART *****************************/
 
 		/**
-		 * Sketch dimension ,S=nPCs+subsample Sketched matrix, B=A*S; QR
-		 * decomposition, Q=qr(B); SV decomposition, [~,s,V]=svd(Q);
+		 * Sketch dimension ,S=s Sketched matrix, B=A*S; QR decomposition,
+		 * Q=qr(B); SV decomposition, [~,s,V]=svd(Q);
 		 */
 
 		// initialize & broadcast a random seed
@@ -714,191 +736,153 @@ public class sPCA implements Serializable {
 			final Matrix VVtSeed = V.times(VtSeed);
 			// omega-V*V'*omega
 			Matrix Seed = B.minus(VVtSeed);
-
-			Vector seedMu = Seed.transpose().times(meanVector);
-			final Broadcast<Vector> brSeedMu = sc.broadcast(seedMu);
+			
 			// System.out.println(brSeedMu.value().getQuick(5));
 
-			final Broadcast<Matrix> seed = sc.broadcast(Seed);
 
+			final int s=nPCs+subsample;
+			// Broadcast Y2X because it will be used in several jobs and several
+			// iterations.
+			final Broadcast<Matrix> br_Seed = sc.broadcast(Seed);
 
-			JavaRDD<Matrix> Rs = vectors.glom().map(new Function<List<org.apache.spark.mllib.linalg.Vector>, Matrix>() {
+			// Xm = Ym * Y2X
+			Vector zm_mahout = new DenseVector(s);
+			zm_mahout = PCAUtils.denseVectorTimesMatrix(br_ym_mahout.value(), Seed, zm_mahout);
 
-				@Override
-				public Matrix call(List<org.apache.spark.mllib.linalg.Vector> v1) throws Exception {
-					// TODO Auto-generated method stub
-					Matrix A = new DenseMatrix(v1.size(), nPCs + subsample);
-					Matrix R = new DenseMatrix(nPCs+subsample,nPCs+subsample);
-					for (int i = 0; i < v1.size(); i++) {
-						double[] values = v1.get(i).toArray();// TODO check does
-																// it
-																// really save
-																// time?!?!
+			// Broadcast Xm because it will be used in several iterations.
+			final Broadcast<Vector> br_zm_mahout = sc.broadcast(zm_mahout);
+			// We skip computing X as we generate it on demand using Y and Y2X
 
-						int[] indices = ((SparseVector) v1.get(i)).indices();
-						int index;
-						double value = 0;
-
-						for (int b = 0; b < (nPCs + subsample); b++) {
-							for (int a = 0; a < indices.length; a++) {
-								index = indices[a];
-								value += values[index] * seed.value().getQuick(index, b);
-							}
-							A.setQuick(i, b, value - brSeedMu.value().getQuick(b));
-							value = 0;
-						}
-					}
-					Matrix a=A;
-					int rows, columns;
-					// QR decomposition of B
-					 rows = a.rowSize();
-
-					    columns = a.columnSize();
-
-					    boolean fullRank = true;
-
-					  Matrix  r = new DenseMatrix(columns, columns);
-
-					    for (int i = 0; i < columns; i++) {
-					      Vector qi = a.viewColumn(i);
-					      double alpha = qi.norm(2);
-					      if (Math.abs(alpha) > Double.MIN_VALUE) {
-					        qi.assign(Functions.div(alpha));
-					      } else {
-					        if (Double.isInfinite(alpha) || Double.isNaN(alpha)) {
-					          throw new ArithmeticException("Invalid intermediate result");
-					        }
-					        fullRank = false;
-					      }
-					      r.set(i, i, alpha);
-
-					      for (int j = i + 1; j < columns; j++) {
-					        Vector qj = a.viewColumn(j);
-					        double norm = qj.norm(2);
-					        if (Math.abs(norm) > Double.MIN_VALUE) {
-					          double beta = qi.dot(qj);
-					          r.set(i, j, beta);
-					        } else {
-					          if (Double.isInfinite(norm) || Double.isNaN(norm)) {
-					            throw new ArithmeticException("Invalid intermediate result");
-					          }
-					        }
-					      }
-					    }
-					    
-					return r;
-				}
-
-			});
-
-			Matrix R = Rs.treeReduce(new Function2<Matrix, Matrix, Matrix>() {
-
-				@Override
-				public Matrix call(Matrix v1, Matrix v2) throws Exception {
-					// TODO Auto-generated method stub
-					Matrix v3 = new DenseMatrix(v1.rowSize() + v2.rowSize(), (nPCs + subsample));
-					for (int i = 0; i < v1.rowSize(); i++) {
-						for (int j = 0; j < v1.columnSize(); j++) {
-							v3.setQuick(i, j, v1.getQuick(i, j));
-						}
-					}
-					for (int i = v1.rowSize(); i < v1.rowSize() + v2.rowSize(); i++) {
-						for (int j = 0; j < v2.columnSize(); j++) {
-							v3.setQuick(i, j, v2.getQuick(i - v1.rowSize(), j));
-						}
-					}
-					org.apache.mahout.math.QRDecomposition QR = new org.apache.mahout.math.QRDecomposition(v3);
-					return QR.getR();
-				}
-			});
-
-			R = PCAUtils.inv(R);
-			// omega-V*V'*omega
-			Seed = B.times(R);
-
-			seedMu = Seed.transpose().times(meanVector);
-			final Broadcast<Vector> brSeedMu_R = sc.broadcast(seedMu);
-			// System.out.println(brSeedMu.value().getQuick(5));
-
-			final Broadcast<Matrix> seed_R = sc.broadcast(Seed);
-
-			final Accumulator<double[]> sumQ = sc.accumulator(new double[nPCs + subsample],
-					new VectorAccumulatorParam());
-			final Accumulator<double[][]> sumQtA = sc.accumulator(new double[(nPCs + subsample)][nCols],
+			// 3. X'X and Y'X Job: The job computes the two matrices X'X and Y'X
+			/**
+			 * Xc = Yc * MEM (MEM is the in-memory broadcasted matrix Y2X)
+			 * 
+			 * XtX = Xc' * Xc
+			 * 
+			 * YtX = Yc' * Xc
+			 * 
+			 * It also considers that Y is sparse and receives the mean vectors Ym
+			 * and Xm separately.
+			 * 
+			 * Yc = Y - Ym
+			 * 
+			 * Xc = X - Xm
+			 * 
+			 * Xc = (Y - Ym) * MEM = Y * MEM - Ym * MEM = X - Xm
+			 * 
+			 * XtX = (X - Xm)' * (X - Xm)
+			 * 
+			 * YtX = (Y - Ym)' * (X - Xm)
+			 * 
+			 */
+			final Accumulator<double[][]> matrixAccumZtZ = sc.accumulator(new double[s][s],
 					new MatrixAccumulatorParam());
+			final Accumulator<double[][]> matrixAccumYtZ = sc.accumulator(new double[nCols][s],
+					new MatrixAccumulatorParam());
+			final Accumulator<double[]> matrixAccumZ = sc.accumulator(new double[s], new VectorAccumulatorParam());
 
-			final double[] sumQPartial = new double[nPCs + subsample];
-			final double[][] sumQtAPartial = new double[(nPCs + subsample)][nCols];
+			/*
+			 * Initialize the output matrices and vectors once in order to avoid
+			 * generating massive intermediate data in the workers
+			 */
+			final double[][] resArrayYtZ = new double[nCols][s];
+			final double[][] resArrayZtZ = new double[s][s];
+			final double[] resArrayZ = new double[s];
 
-			final int row = nPCs + subsample;
+			/*
+			 * Used to sum the vectors in one partition.
+			 */
+			final double[][] internalSumYtZ = new double[nCols][s];
+			final double[][] internalSumZtZ = new double[s][s];
+			final double[] internalSumZ = new double[s];
 
 			vectors.foreachPartition(new VoidFunction<Iterator<org.apache.spark.mllib.linalg.Vector>>() {
 
-				@Override
 				public void call(Iterator<org.apache.spark.mllib.linalg.Vector> arg0) throws Exception {
-
-					org.apache.spark.mllib.linalg.Vector Avec = null;
-					double[] Q = new double[nPCs + subsample];
-					double[] A = null;
-
+					org.apache.spark.mllib.linalg.Vector yi;
 					while (arg0.hasNext()) {
-						// lol mistake
-						Avec = arg0.next();
+						yi = arg0.next();
 
-						A = Avec.toArray();// TODO check does
-											// it
-											// really save
-											// time?!?!
+						/*
+						 * Perform in-memory matrix multiplication xi = yi' * Y2X
+						 */
+						PCAUtils.sparseVectorTimesMatrix(yi, br_Seed.value(), resArrayZ);
 
-						int[] indices = ((SparseVector) Avec).indices();
-						int index;
-						double value = 0;
-						for (int j = 0; j < (nPCs + subsample); j++) {
-							for (int i = 0; i < indices.length; i++) {
-								index = indices[i];
-								value += A[index] * seed_R.value().getQuick(index, j);
+						// get only the sparse indices
+						int[] indices = ((SparseVector) yi).indices();
+
+						PCAUtils.outerProductWithIndices(yi, br_ym_mahout.value(), resArrayZ, br_zm_mahout.value(),
+								resArrayYtZ, indices);
+						PCAUtils.outerProductArrayInput(resArrayZ, br_zm_mahout.value(), resArrayZ, br_zm_mahout.value(),
+								resArrayZtZ);
+						int i, j, rowIndexYtZ;
+
+						// add the sparse indices only
+						for (i = 0; i < indices.length; i++) {
+							rowIndexYtZ = indices[i];
+							for (j = 0; j < s; j++) {
+								internalSumYtZ[rowIndexYtZ][j] += resArrayYtZ[rowIndexYtZ][j];
+								resArrayYtZ[rowIndexYtZ][j] = 0; // reset it
 							}
-							Q[j] = value - brSeedMu_R.value().getQuick(j);
-							value = 0;
-						}
 
-						for (int j = 0; j < indices.length; j++) {
-							for (int i = 0; i < row; i++) {
-								index = indices[j];
-								sumQtAPartial[i][index] += Q[i] * A[index];
+						}
+						for (i = 0; i < s; i++) {
+							internalSumZ[i] += resArrayZ[i];
+							for (j = 0; j < s; j++) {
+								internalSumZtZ[i][j] += resArrayZtZ[i][j];
+								resArrayZtZ[i][j] = 0; // reset it
 							}
-						}
-						for (int i = 0; i < row; i++) {
-							sumQPartial[i] += Q[i];
-						}
 
+						}
 					}
-
-					sumQ.add(sumQPartial);
-					sumQtA.add(sumQtAPartial);
-
+					matrixAccumZ.add(internalSumZ);
+					matrixAccumZtZ.add(internalSumZtZ);
+					matrixAccumYtZ.add(internalSumYtZ);
 				}
 
-			});
+			});// end X'X and Y'X Job
 
-			final Matrix sumQtAres = new DenseMatrix(sumQtA.value());
-			final Vector sumQres = new DenseVector(sumQ.value());
+			/*
+			 * Get the values of the accumulators.
+			 */
+			Matrix centralYtZ = new DenseMatrix(matrixAccumYtZ.value());
+			Matrix centralZtZ = new DenseMatrix(matrixAccumZtZ.value());
+			Vector centralSumZ = new DenseVector(matrixAccumZ.value());
 
-			final Matrix QtAV = sumQtAres.times(V);
+			/*
+			 * Mi = (Yi-Ym)' x (Xi-Xm) = Yi' x (Xi-Xm) - Ym' x (Xi-Xm)
+			 * 
+			 * M = Sum(Mi) = Sum(Yi' x (Xi-Xm)) - Ym' x (Sum(Xi)-N*Xm)
+			 * 
+			 * The first part is done in the previous job and the second in the
+			 * following method
+			 */
+			centralYtZ = PCAUtils.updateXtXAndYtx(centralYtZ, centralSumZ, br_ym_mahout.value(), zm_mahout, nRows);
+			centralZtZ = PCAUtils.updateXtXAndYtx(centralZtZ, centralSumZ, zm_mahout, zm_mahout, nRows);
+
+			
+			Matrix R = new org.apache.mahout.math.CholeskyDecomposition(centralZtZ, false).getL().transpose();
+			
+			
+			R = PCAUtils.inv(R);
+			centralYtZ=centralYtZ.times(R);
+			centralYtZ=centralYtZ.transpose();
+			
+
+			final Matrix QtAV = centralYtZ.times(V);
 			final Matrix QtAVVt = QtAV.times(V.transpose());
-			final Vector muV = V.transpose().times(meanVector);
-			final Vector muVVt = V.times(muV);
-			final Vector modMeanVector = meanVector.minus(muVVt);
-			final Matrix Qtmu = sumQres.cross(modMeanVector);
-			B = sumQtAres.minus(QtAVVt);
-			B = B.minus(Qtmu);
+			B = centralYtZ.minus(QtAVVt);
 
 			SVD = new org.apache.mahout.math.SingularValueDecomposition(B);
 
 			B = B.transpose();
 
-			S = SVD.getS().getQuick(nPCs - 1, nPCs - 1);
-			S = Math.round(S * 10000.0) / 10000.0;
+			Double newS = SVD.getS().getQuick(nPCs - 1, nPCs - 1);
+			newS = Math.round(newS * 10000.0) / 10000.0;
+			if (newS == S)
+				break;
+			else
+				S = newS;
 			System.out.println(S);
 		}
 
@@ -909,6 +893,6 @@ public class sPCA implements Serializable {
 	private static void printLogMessage(String argName) {
 		log.error("Missing arguments -D" + argName);
 		log.info(
-				"Usage: -Di=<path/to/input/matrix> -Do=<path/to/outputfolder> -Drows=<number of rows> -Dcols=<number of columns> -Dpcs=<number of principal components> [-DerrSampleRate=<Error sampling rate>] [-DmaxIter=<max iterations>] [-DoutFmt=<output format>] [-DComputeProjectedMatrix=<0/1 (compute projected matrix or not)>]");
+				"Usage: -Di=<path/to/input/matrix> -Do=<path/to/outputfolder> -Drows=<number of rows> -Dcols=<number of columns> -Dpcs=<number of principal components> [-DerrSampleRate=<Error sampling rate>] [-DmaxIter=<max iterations>] [-DoutFmt=<output format>] [-DcalculateError=<0/1 (compute projected matrix or not)>]");
 	}
 }
