@@ -461,7 +461,8 @@ public class sPCA implements Serializable {
 		double ss = PCAUtils.randSS();
 
 		Matrix centralC = PCAUtils.randomMatrix(nCols, nPCs);
-		
+		PCAUtils.printMatrixToFile(PCAUtils.convertMahoutToSparkMatrix(centralC),
+				OutputFormat.DENSE, outputPath+File.separator+"Seed");
 		double spectral_error;
 		double error;
 		// initial CtC

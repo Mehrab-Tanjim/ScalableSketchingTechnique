@@ -807,6 +807,7 @@ public class PragmaticPPCA implements Serializable {
 
 			// C = (Ye'*X) / SumXtX;
 			Matrix invXtX_central = PCAUtils.inv(centralXtX);
+			Matrix oldcentralC=centralC;			
 			centralC = centralYtX.times(invXtX_central);
 			centralCtC = centralC.transpose().times(centralC);
 
@@ -860,7 +861,25 @@ public class PragmaticPPCA implements Serializable {
 			totalTime = endTime - startTime;
 			stat.ppcaIterTime.add((double) totalTime / 1000.0);
 			stat.totalRunTime += (double) totalTime / 1000.0;
-
+			
+			//dw = max(max(abs(W-Wnew) / (sqrt(eps)+max(max(abs(Wnew))))));
+			
+			double maxWnew=0,dw=0;
+			
+			for(int a=0;a<nCols;a++){
+				for(int b=0;b<nPCs;b++){
+					maxWnew=Math.max(Math.abs(centralC.getQuick(a,b)),maxWnew);
+					dw=Math.max(
+							Math.abs((oldcentralC.getQuick(a,b))
+									-(centralC.getQuick(a,b))),dw);
+				}
+			}
+			
+			double sqrtEps=2.2204e-16;
+			dw/=(sqrtEps+maxWnew);
+			System.out.println("dw "+dw);
+			
+			
 			double objective = ss;
 			relChangeInObjective = Math.abs(1 - objective / prevObjective);
 			prevObjective = objective;
@@ -879,11 +898,13 @@ public class PragmaticPPCA implements Serializable {
 				System.out.println("... end of computing the error at round " + round + " error=" + error);
 				prevError = error;
 			}
-
+			
+			//if(dw<=tolerance) break;
 			/**
 			 * reinitialize
 			 */
 			startTime = System.currentTimeMillis();
+			
 		}
 		// return the actual PC not the principal subspace
 		stat.nIter = round;

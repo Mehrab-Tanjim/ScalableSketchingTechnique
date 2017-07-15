@@ -218,12 +218,12 @@ public class FileFormat {
 	          writer=SequenceFile.createWriter(fs, conf, new Path(outputFileName), IntWritable.class, VectorWritable.class, CompressionType.BLOCK);
 	          
 	          while ((thisLine = br.readLine()) != null) { // while loop begins here   		   
-	        	  String [] splitted = thisLine.split("\\s+");
-	        	  int rowID=Integer.parseInt(splitted[0])-11;
-	        	  int colID=Integer.parseInt(splitted[1])-11;
-	        	  double element=1;//Double.parseDouble(splitted[2]);
+	        	  String [] splitted = thisLine.split(",");
+	        	  int rowID=Integer.parseInt(splitted[0]);
+	        	  int colID=Integer.parseInt(splitted[1]);
+	        	  double element=Double.parseDouble(splitted[2]);
 	        	  //if(count==1000) break;//take first 5000 count line number
-	        	  if(colID>500000) continue;//take 5000 columns
+	        	  if(colID>50000) continue;//take 5000 columns
 	        	  if(first)
 	        	  {
 	        		  first=false;
