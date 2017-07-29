@@ -431,170 +431,167 @@ public class SSVD implements Serializable {
 			Vector seedMu = B.transpose().times(meanVector);
 			final Broadcast<Vector> brSeedMu = sc.broadcast(seedMu);
 					
+
 			
-			
-			final Accumulator<double[][]> matrixAccumYtY = sc.accumulator(new double[nPCs+subsample][nPCs+subsample],
-					new MatrixAccumulatorParam());
-			final Accumulator<double[]> matrixAccumY = sc.accumulator(new double[nPCs+subsample], new VectorAccumulatorParam());
+			JavaRDD<Matrix> Rs = vectors.glom().map(new Function<List<org.apache.spark.mllib.linalg.Vector>, Matrix>() {
 
-			/*
-			 * Initialize the output matrices and vectors once in order to avoid
-			 * generating massive intermediate data in the workers
-			 */
-			final double[][] resArrayYtY = new double[nPCs+subsample][nPCs+subsample];
-			final double[] resArrayY = new double[nPCs+subsample];
+				@Override
+				public Matrix call(List<org.apache.spark.mllib.linalg.Vector> v1) throws Exception {
+					// TODO Auto-generated method stub
+					Matrix A = new DenseMatrix(v1.size(), nPCs + subsample);
 
-			/*
-			 * Used to sum the vectors in one partition.
-			 */
-			final double[][] internalSumYtY = new double[nPCs+subsample][nPCs+subsample];
-			final double[] internalSumY = new double[nPCs+subsample];
+					for (int i = 0; i < v1.size(); i++) {
+						double[] values = v1.get(i).toArray();// TODO check does
+																// it
+																// really save
+																// time?!?!
 
-			vectors.foreachPartition(new VoidFunction<Iterator<org.apache.spark.mllib.linalg.Vector>>() {
+						int[] indices = ((SparseVector) v1.get(i)).indices();
+						int index;
+						double value = 0;
 
-				public void call(Iterator<org.apache.spark.mllib.linalg.Vector> arg0) throws Exception {
-					org.apache.spark.mllib.linalg.Vector yi;
-					while (arg0.hasNext()) {
-						yi = arg0.next();
+						for (int b = 0; b < (nPCs + subsample); b++) {
+							for (int a = 0; a < indices.length; a++) {
+								index = indices[a];
+								value += values[index] * seed.value().getQuick(index, b);
+							}
+							A.setQuick(i, b, value - brSeedMu.value().getQuick(b));
+							value = 0;
+						}
+					}
 
-						/*
-						 * Perform in-memory matrix multiplication xi = yi' *
-						 * Y2X
-						 */
-						PCAUtils.sparseVectorTimesMatrix(yi, seed.value(), resArrayY);
+					// QR decomposition of B
+					int rows = A.rowSize();
+					int columns = A.columnSize();
 
-						// get only the sparse indices
-					
-						PCAUtils.outerProductArrayInput(resArrayY, brSeedMu.value(), resArrayY,
-								brSeedMu.value(), resArrayYtY);
-						int i, j;
+					int min = Math.min(rows, columns);
 
-						// add the sparse indices only
-						
-						for (i = 0; i < nPCs+subsample; i++) {
-							internalSumY[i] += resArrayY[i];
-							for (j = 0; j < nPCs+subsample; j++) {
-								internalSumYtY[i][j] += resArrayYtY[i][j];
-								resArrayYtY[i][j] = 0; // reset it
+					Matrix r = new DenseMatrix(min, columns);
+
+					for (int i = 0; i < min; i++) {
+						Vector qi = A.viewColumn(i);
+						double alpha = qi.norm(2);
+						qi.assign(Functions.div(alpha));
+						r.set(i, i, alpha);
+
+						for (int j = i + 1; j < columns; j++) {
+							Vector qj = A.viewColumn(j);
+							double beta = qi.dot(qj);
+							r.set(i, j, beta);
+							if (j < min) {
+								qj.assign(qi, Functions.plusMult(-beta));
 							}
 
 						}
 					}
-					matrixAccumY.add(internalSumY);
-					matrixAccumYtY.add(internalSumYtY);
+
+					return r;
 				}
 
-			});// end X'X and Y'X Job
+			});
 
-			/*
-			 * Get the values of the accumulators.
-			 */
-			Matrix centralYtY = new DenseMatrix(matrixAccumYtY.value());
-			Vector centralSumY = new DenseVector(matrixAccumY.value());
+			Matrix R = Rs.treeReduce(new Function2<Matrix, Matrix, Matrix>() {
 
-			/*
-			 * Mi = (Yi-Ym)' x (Xi-Xm) = Yi' x (Xi-Xm) - Ym' x (Xi-Xm)
-			 * 
-			 * M = Sum(Mi) = Sum(Yi' x (Xi-Xm)) - Ym' x (Sum(Xi)-N*Xm)
-			 * 
-			 * The first part is done in the previous job and the second in the
-			 * following method
-			 */
-			centralYtY = PCAUtils.updateXtXAndYtx(centralYtY, centralSumY, seedMu, seedMu, nRows);
+				@Override
+				public Matrix call(Matrix v1, Matrix v2) throws Exception {
+					// TODO Auto-generated method stub
+					Matrix v3 = new DenseMatrix(v1.rowSize() + v2.rowSize(), (nPCs + subsample));
+					for (int i = 0; i < v1.rowSize(); i++) {
+						for (int j = 0; j < v1.columnSize(); j++) {
+							v3.setQuick(i, j, v1.getQuick(i, j));
+						}
+					}
+					for (int i = v1.rowSize(); i < v1.rowSize() + v2.rowSize(); i++) {
+						for (int j = 0; j < v2.columnSize(); j++) {
+							v3.setQuick(i, j, v2.getQuick(i - v1.rowSize(), j));
+						}
+					}
+					org.apache.mahout.math.QRDecomposition QR = new org.apache.mahout.math.QRDecomposition(v3);
+					return QR.getR();
+				}
+			});
 
-			
-			
-			
-			
-			Matrix R=new org.apache.mahout.math.CholeskyDecomposition(centralYtY,false).getL().transpose();			
-				
 			R = PCAUtils.inv(R);
-			
+			// omega-V*V'*omega
 			Matrix Seed = B.times(R);
 
 			seedMu = Seed.transpose().times(meanVector);
 			final Broadcast<Vector> brSeedMu_R = sc.broadcast(seedMu);
 			// System.out.println(brSeedMu.value().getQuick(5));
 
-			final Broadcast<Matrix> seed_R = sc.broadcast(Seed);		
-			
-			
-			
-			final Accumulator<double[][]> matrixAccumAtQ = sc.accumulator(new double[nCols][nPCs+subsample],
+			final Broadcast<Matrix> seed_R = sc.broadcast(Seed);
+
+			final Accumulator<double[]> sumQ = sc.accumulator(new double[nPCs + subsample],
+					new VectorAccumulatorParam());
+			final Accumulator<double[][]> sumQtA = sc.accumulator(new double[(nPCs + subsample)][nCols],
 					new MatrixAccumulatorParam());
-			final Accumulator<double[]> matrixAccumQ = sc.accumulator(new double[nPCs+subsample], new VectorAccumulatorParam());
 
-			/*
-			 * Initialize the output matrices and vectors once in order to avoid
-			 * generating massive intermediate data in the workers
-			 */
-			final double[][] resArrayAtQ = new double[nCols][nPCs+subsample];
-			final double[] resArrayQ = new double[nPCs+subsample];
+			final double[] sumQPartial = new double[nPCs + subsample];
+			final double[][] sumQtAPartial = new double[(nPCs + subsample)][nCols];
 
-			/*
-			 * Used to sum the vectors in one partition.
-			 */
-			final double[][] internalSumAtQ = new double[nCols][nPCs+subsample];
-			final double[] internalSumQ = new double[nPCs+subsample];
+			final int row = nPCs + subsample;
 
 			vectors.foreachPartition(new VoidFunction<Iterator<org.apache.spark.mllib.linalg.Vector>>() {
 
+				@Override
 				public void call(Iterator<org.apache.spark.mllib.linalg.Vector> arg0) throws Exception {
-					org.apache.spark.mllib.linalg.Vector yi;
+
+					org.apache.spark.mllib.linalg.Vector Avec = null;
+					double[] Q = new double[nPCs + subsample];
+					double[] A = null;
+
 					while (arg0.hasNext()) {
-						yi = arg0.next();
+						// lol mistake
+						Avec = arg0.next();
 
-						/*
-						 * Perform in-memory matrix multiplication xi = yi' *
-						 * Y2X
-						 */
-						PCAUtils.sparseVectorTimesMatrix(yi, seed_R.value(), resArrayQ);
+						A = Avec.toArray();// TODO check does
+											// it
+											// really save
+											// time?!?!
 
-						// get only the sparse indices
-						int[] indices = ((SparseVector) yi).indices();
-
-						PCAUtils.outerProductWithIndices(yi, br_ym_mahout.value(), resArrayQ, brSeedMu_R.value(),
-								resArrayAtQ, indices);
-						
-						int i, j, rowIndexYtX;
-
-						// add the sparse indices only
-						for (i = 0; i < indices.length; i++) {
-							rowIndexYtX = indices[i];
-							for (j = 0; j < nPCs+subsample; j++) {
-								internalSumAtQ[rowIndexYtX][j] += resArrayAtQ[rowIndexYtX][j];
-								resArrayAtQ[rowIndexYtX][j] = 0; // reset it
+						int[] indices = ((SparseVector) Avec).indices();
+						int index;
+						double value = 0;
+						for (int j = 0; j < (nPCs + subsample); j++) {
+							for (int i = 0; i < indices.length; i++) {
+								index = indices[i];
+								value += A[index] * seed_R.value().getQuick(index, j);
 							}
-
+							Q[j] = value - brSeedMu_R.value().getQuick(j);
+							value = 0;
 						}
-						for (i = 0; i < nPCs+subsample; i++) {
-							internalSumQ[i] += resArrayQ[i];
-							
 
+						for (int j = 0; j < indices.length; j++) {
+							for (int i = 0; i < row; i++) {
+								index = indices[j];
+								sumQtAPartial[i][index] += Q[i] * A[index];
+							}
 						}
+						for (int i = 0; i < row; i++) {
+							sumQPartial[i] += Q[i];
+						}
+
 					}
-					matrixAccumQ.add(internalSumQ);
-					matrixAccumAtQ.add(internalSumAtQ);
+
+					sumQ.add(sumQPartial);
+					sumQtA.add(sumQtAPartial);
+
 				}
 
-			});// end X'X and Y'X Job
+			});
 
-			/*
-			 * Get the values of the accumulators.
-			 */
-			Matrix centralAtQ = new DenseMatrix(matrixAccumAtQ.value());
-			Vector centralSumQ = new DenseVector(matrixAccumQ.value());
-			
-			centralAtQ = PCAUtils.updateXtXAndYtx(centralAtQ, centralSumQ, br_ym_mahout.value(), seedMu, nRows);
-			
-			B = centralAtQ.transpose();
-			org.apache.mahout.math.SingularValueDecomposition SVD = 
-					new org.apache.mahout.math.SingularValueDecomposition(B);
-		
+			final Matrix sumQtAres = new DenseMatrix(sumQtA.value());
+			final Vector sumQres = new DenseVector(sumQ.value());
+			final Matrix Qtmu = sumQres.cross(meanVector);
+			B = sumQtAres.minus(Qtmu);
+
+			org.apache.mahout.math.SingularValueDecomposition SVD 
+			 = new org.apache.mahout.math.SingularValueDecomposition(B);
+
+			B = B.transpose();
 			
 			V = SVD.getV().viewPart(0, nCols, 0, nPCs);
 			
-			B=B.transpose();
 			
 			endTime = System.currentTimeMillis();
 			totalTime = endTime - startTime;
