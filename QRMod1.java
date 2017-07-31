@@ -58,9 +58,9 @@ import scala.Tuple2;
  * 
  */
 
-public class SSVD implements Serializable {
+public class QRMod1 implements Serializable {
 
-	private final static Logger log = LoggerFactory.getLogger(SSVD.class);// getLogger(SparkPCA.class);
+	private final static Logger log = LoggerFactory.getLogger(QRMod1.class);// getLogger(SparkPCA.class);
 
 	static String dataset = "Untitled";
 	static long startTime, endTime, totalTime;

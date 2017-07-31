@@ -9,19 +9,27 @@
 */
 package org.qcri.sparkpca;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.io.Serializable;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.SequenceFile;
+import org.apache.hadoop.io.SequenceFile.CompressionType;
 import org.apache.log4j.Level;
 import org.apache.mahout.math.DenseMatrix;
 import org.apache.mahout.math.DenseVector;
 import org.apache.mahout.math.Matrix;
+import org.apache.mahout.math.SequentialAccessSparseVector;
 import org.apache.mahout.math.Vector;
 import org.apache.mahout.math.Vector.Element;
 import org.apache.mahout.math.VectorWritable;
@@ -58,9 +66,9 @@ import scala.Tuple2;
  * 
  */
 
-public class SSVD implements Serializable {
+public class ErrorCheck implements Serializable {
 
-	private final static Logger log = LoggerFactory.getLogger(SSVD.class);// getLogger(SparkPCA.class);
+	private final static Logger log = LoggerFactory.getLogger(ErrorCheck.class);// getLogger(SparkPCA.class);
 
 	static String dataset = "Untitled";
 	static long startTime, endTime, totalTime;
@@ -73,6 +81,7 @@ public class SSVD implements Serializable {
 
 		// Parsing input arguments
 		final String inputPath;
+		final String inputPathV;
 		final String outputPath;
 		final int nRows;
 		final int nCols;
@@ -84,6 +93,15 @@ public class SSVD implements Serializable {
 		final int subsampleNorm;
 
 		try {
+			inputPathV = System.getProperty("iV");
+			if (inputPathV == null)
+				throw new IllegalArgumentException();
+		} catch (Exception e) {
+			printLogMessage("iV");
+			return;
+		}
+		
+		try {
 			inputPath = System.getProperty("i");
 			if (inputPath == null)
 				throw new IllegalArgumentException();
@@ -91,6 +109,7 @@ public class SSVD implements Serializable {
 			printLogMessage("i");
 			return;
 		}
+		
 		try {
 			outputPath = System.getProperty("o");
 			if (outputPath == null)
@@ -210,7 +229,7 @@ public class SSVD implements Serializable {
 		}
 
 		// Setting Spark configuration parameters
-		SparkConf conf = new SparkConf().setAppName("SSVD").setMaster("local[*]");//
+		SparkConf conf = new SparkConf().setAppName("ErrorCheck").setMaster("local[*]");//
 		// TODO
 		// remove
 		// this
@@ -222,7 +241,7 @@ public class SSVD implements Serializable {
 		JavaSparkContext sc = new JavaSparkContext(conf);
 
 		// compute principal components
-		computePrincipalComponents(sc, inputPath, outputPath, nRows, nCols, nPCs, subsample, tolerance,
+		computePrincipalComponents(sc, inputPath, inputPathV, outputPath, nRows, nCols, nPCs, subsample, tolerance,
 				k_plus_one_singular_value, q, maxIterations, calculateError, subsampleNorm);
 
 		// log.info("Principal components computed successfully ");
@@ -254,7 +273,7 @@ public class SSVD implements Serializable {
 	 * @throws FileNotFoundException
 	 */
 	public static org.apache.spark.mllib.linalg.Matrix computePrincipalComponents(JavaSparkContext sc, String inputPath,
-			String outputPath, final int nRows, final int nCols, final int nPCs, final int subsample,
+			String inputPathV, String outputPath, final int nRows, final int nCols, final int nPCs, final int subsample,
 			final double tolerance, final double k_plus_one_singular_value, final int q, final int maxIterations,
 			final int calculateError, final int subsampleNorm) throws FileNotFoundException {
 
@@ -292,7 +311,7 @@ public class SSVD implements Serializable {
 				}).persist(StorageLevel.MEMORY_ONLY_SER()); // TODO
 															// change
 															// later;
-
+		
 		// 1. Mean Job : This job calculates the mean and span of the columns of
 		// the input RDD<org.apache.spark.mllib.linalg.Vector>
 		final Accumulator<double[]> matrixAccumY = sc.accumulator(new double[nCols], new VectorAccumulatorParam());
@@ -328,13 +347,66 @@ public class SSVD implements Serializable {
 
 		stat.totalRunTime = stat.preprocessTime;
 
-		stat.appName = "SSVD";
+		stat.appName = "ErrorCheck";
 		stat.dataSet = dataset;
 		stat.nRows = nRows;
 		stat.nCols = nCols;
 
+		double [][] v=new double[nCols][nPCs];
+		try
+    	{
+	         
+	         int lineNumber=0;
+	         String thisLine;
+	         File[] filePathList=null;
+	         File inputFile=new File(inputPathV);
+	          if(inputFile.isFile()) // if it is a file
+	          { 
+	        	  filePathList= new File[1];
+	        	  filePathList[0]=inputFile;
+	          }
+	          else
+	          {
+	        	  filePathList=inputFile.listFiles();
+	          }
+	          if(filePathList==null)
+	          {
+	        	  log.error("The path " + inputPathV + " does not exist");
+	          	  return null;
+	          }
+	        
+	          for(File file:filePathList)
+	          {
+		          BufferedReader br = new BufferedReader(new FileReader(file));
+		          
+		          while ((thisLine = br.readLine()) != null) { // while loop begins here
+		              if(thisLine.isEmpty())
+		            	  continue;
+		        	  String [] splitted = thisLine.split(",");
+		        	  double first = Double.parseDouble(splitted[0].substring(1));
+		        	  
+		        	  String lastOne=splitted[splitted.length-1];
+		        	  
+		        	  double last = Double.parseDouble(lastOne.
+		        			  substring(0,lastOne.length()-1));
+		        	  v[lineNumber][0]=first;
+		        	  v[lineNumber][splitted.length-1]=last;
+		        	  for (int i=1; i < splitted.length-1; i++)
+		        	  {
+		        		  v[lineNumber][i]=Double.parseDouble(splitted[i]);
+		        	  }
+		        	  lineNumber++;
+		          }
+	          }   
+		    }
+	    	catch (Exception e) {
+	    		e.printStackTrace();
+	    	}
+		
+		
+		Matrix V=new DenseMatrix(v);
 		// compute principal components
-		computePrincipalComponents(sc, vectors, br_ym_mahout, meanVector, outputPath, nRows, nCols, nPCs,
+		computePrincipalComponents(sc, V, vectors, br_ym_mahout, meanVector, outputPath, nRows, nCols, nPCs,
 				subsample, tolerance, k_plus_one_singular_value, q, maxIterations, calculateError, subsampleNorm);
 
 		// count the average ppca runtime
@@ -377,7 +449,7 @@ public class SSVD implements Serializable {
 	 * @throws FileNotFoundException
 	 */
 	public static org.apache.spark.mllib.linalg.Matrix computePrincipalComponents(JavaSparkContext sc,
-			JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors, final Broadcast<Vector> br_ym_mahout,
+			final Matrix V,JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors, final Broadcast<Vector> br_ym_mahout,
 			final Vector meanVector,  String outputPath, final int nRows, final int nCols, final int nPCs,
 			final int subsample, final double tolerance, final double k_plus_one_singular_value, final int q,
 			final int maxIterations, final int calculateError, final int subsampleNorm) throws FileNotFoundException {
@@ -405,202 +477,11 @@ public class SSVD implements Serializable {
 		 * decomposition, Q=qr(B); SV decomposition, [~,s,V]=svd(Q);
 		 */
 
-		// initialize & broadcast a random seed
-		org.apache.spark.mllib.linalg.Matrix GaussianRandomMatrix = org.apache.spark.mllib.linalg.Matrices.randn(nCols,
-				nPCs + subsample, new SecureRandom());
-		//PCAUtils.printMatrixToFile(GaussianRandomMatrix, OutputFormat.DENSE, outputPath + File.separator + "Seed");
-		Matrix B = PCAUtils.convertSparkToMahoutMatrix(GaussianRandomMatrix);
-		// Matrix GaussianRandomMatrix = PCAUtils.randomValidationMatrix(nCols,
-		// nPCs + subsample);
-		// Matrix B = GaussianRandomMatrix;
-		// PCAUtils.printMatrixToFile(PCAUtils.convertMahoutToSparkMatrix(GaussianRandomMatrix),
-		// OutputFormat.DENSE, outputPath+File.separator+"Seed");
-
-		final int s=nPCs+subsample;
-		// Broadcast Y2X because it will be used in several jobs and several
-		// iterations.
-		Matrix V=null;
-		double spectral_error,error,prevError=tolerance+1;
-		
-		for (int iter = 0; iter < maxIterations&&prevError>tolerance; iter++) {
-			
-				
-			
-			final Broadcast<Matrix> seed = sc.broadcast(B);
-
-			Vector seedMu = B.transpose().times(meanVector);
-			final Broadcast<Vector> brSeedMu = sc.broadcast(seedMu);
-					
-
-			
-			JavaRDD<Matrix> Rs = vectors.glom().map(new Function<List<org.apache.spark.mllib.linalg.Vector>, Matrix>() {
-
-				@Override
-				public Matrix call(List<org.apache.spark.mllib.linalg.Vector> v1) throws Exception {
-					// TODO Auto-generated method stub
-					Matrix A = new DenseMatrix(v1.size(), nPCs + subsample);
-
-					for (int i = 0; i < v1.size(); i++) {
-						double[] values = v1.get(i).toArray();// TODO check does
-																// it
-																// really save
-																// time?!?!
-
-						int[] indices = ((SparseVector) v1.get(i)).indices();
-						int index;
-						double value = 0;
-
-						for (int b = 0; b < (nPCs + subsample); b++) {
-							for (int a = 0; a < indices.length; a++) {
-								index = indices[a];
-								value += values[index] * seed.value().getQuick(index, b);
-							}
-							A.setQuick(i, b, value - brSeedMu.value().getQuick(b));
-							value = 0;
-						}
-					}
-
-					// QR decomposition of B
-					int rows = A.rowSize();
-					int columns = A.columnSize();
-
-					int min = Math.min(rows, columns);
-
-					Matrix r = new DenseMatrix(min, columns);
-
-					for (int i = 0; i < min; i++) {
-						Vector qi = A.viewColumn(i);
-						double alpha = qi.norm(2);
-						qi.assign(Functions.div(alpha));
-						r.set(i, i, alpha);
-
-						for (int j = i + 1; j < columns; j++) {
-							Vector qj = A.viewColumn(j);
-							double beta = qi.dot(qj);
-							r.set(i, j, beta);
-							if (j < min) {
-								qj.assign(qi, Functions.plusMult(-beta));
-							}
-
-						}
-					}
-
-					return r;
-				}
-
-			});
-
-			Matrix R = Rs.treeReduce(new Function2<Matrix, Matrix, Matrix>() {
-
-				@Override
-				public Matrix call(Matrix v1, Matrix v2) throws Exception {
-					// TODO Auto-generated method stub
-					Matrix v3 = new DenseMatrix(v1.rowSize() + v2.rowSize(), (nPCs + subsample));
-					for (int i = 0; i < v1.rowSize(); i++) {
-						for (int j = 0; j < v1.columnSize(); j++) {
-							v3.setQuick(i, j, v1.getQuick(i, j));
-						}
-					}
-					for (int i = v1.rowSize(); i < v1.rowSize() + v2.rowSize(); i++) {
-						for (int j = 0; j < v2.columnSize(); j++) {
-							v3.setQuick(i, j, v2.getQuick(i - v1.rowSize(), j));
-						}
-					}
-					org.apache.mahout.math.QRDecomposition QR = new org.apache.mahout.math.QRDecomposition(v3);
-					return QR.getR();
-				}
-			});
-
-			R = PCAUtils.inv(R);
-			// omega-V*V'*omega
-			Matrix Seed = B.times(R);
-
-			seedMu = Seed.transpose().times(meanVector);
-			final Broadcast<Vector> brSeedMu_R = sc.broadcast(seedMu);
-			// System.out.println(brSeedMu.value().getQuick(5));
-
-			final Broadcast<Matrix> seed_R = sc.broadcast(Seed);
-
-			final Accumulator<double[]> sumQ = sc.accumulator(new double[nPCs + subsample],
-					new VectorAccumulatorParam());
-			final Accumulator<double[][]> sumQtA = sc.accumulator(new double[(nPCs + subsample)][nCols],
-					new MatrixAccumulatorParam());
-
-			final double[] sumQPartial = new double[nPCs + subsample];
-			final double[][] sumQtAPartial = new double[(nPCs + subsample)][nCols];
-
-			final int row = nPCs + subsample;
-
-			vectors.foreachPartition(new VoidFunction<Iterator<org.apache.spark.mllib.linalg.Vector>>() {
-
-				@Override
-				public void call(Iterator<org.apache.spark.mllib.linalg.Vector> arg0) throws Exception {
-
-					org.apache.spark.mllib.linalg.Vector Avec = null;
-					double[] Q = new double[nPCs + subsample];
-					double[] A = null;
-
-					while (arg0.hasNext()) {
-						// lol mistake
-						Avec = arg0.next();
-
-						A = Avec.toArray();// TODO check does
-											// it
-											// really save
-											// time?!?!
-
-						int[] indices = ((SparseVector) Avec).indices();
-						int index;
-						double value = 0;
-						for (int j = 0; j < (nPCs + subsample); j++) {
-							for (int i = 0; i < indices.length; i++) {
-								index = indices[i];
-								value += A[index] * seed_R.value().getQuick(index, j);
-							}
-							Q[j] = value - brSeedMu_R.value().getQuick(j);
-							value = 0;
-						}
-
-						for (int j = 0; j < indices.length; j++) {
-							for (int i = 0; i < row; i++) {
-								index = indices[j];
-								sumQtAPartial[i][index] += Q[i] * A[index];
-							}
-						}
-						for (int i = 0; i < row; i++) {
-							sumQPartial[i] += Q[i];
-						}
-
-					}
-
-					sumQ.add(sumQPartial);
-					sumQtA.add(sumQtAPartial);
-
-				}
-
-			});
-
-			final Matrix sumQtAres = new DenseMatrix(sumQtA.value());
-			final Vector sumQres = new DenseVector(sumQ.value());
-			final Matrix Qtmu = sumQres.cross(meanVector);
-			B = sumQtAres.minus(Qtmu);
-
-			org.apache.mahout.math.SingularValueDecomposition SVD 
-			 = new org.apache.mahout.math.SingularValueDecomposition(B);
-
-			B = B.transpose();
-			
-			V = SVD.getV().viewPart(0, nCols, 0, nPCs);
-			
-			
-			endTime = System.currentTimeMillis();
-			totalTime = endTime - startTime;
-			stat.sketchTime = (double) totalTime / 1000.0;
-			stat.totalRunTime += stat.sketchTime;
+		double error,spectral_error,prevError=tolerance+1;
 			
 			if (calculateError == 1) {
 				// log.info("Computing the error at round " + round + " ...");
-				System.out.println("Computing the error at round " + iter + " ...");
+				//System.out.println("Computing the error at round " + iter + " ...");
 
 				// the following subsample is fixed
 				spectral_error = norm(sc, vectors, nRows, nCols, 1, subsampleNorm, q, meanVector, V,br_ym_mahout);
@@ -609,10 +490,9 @@ public class SSVD implements Serializable {
 				stat.errorList.add((Double) error);
 				// log.info("... end of computing the error at round " + round +
 				// " And error=" + error);
-				System.out.println("... end of computing the error at round " + iter + " error=" + error);
+				System.out.println("... end of computing the error at round error=" + error);
 				prevError = error;
-			}
-			
+		
 			//if(dw<=tolerance) break;
 			/**
 			 * reinitialize
@@ -631,7 +511,7 @@ public class SSVD implements Serializable {
 
 	private static double norm(JavaSparkContext sc, final JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors,
 			final int nRows, final int nCols, final int nPCs, final int subsample, final int q, final Vector meanVector,
-			final Matrix centralC, final Broadcast<Vector> br_ym_mahout) {
+			final Matrix V, final Broadcast<Vector> br_ym_mahout) {
 		/************************** SSVD PART *****************************/
 
 		/**
@@ -645,9 +525,8 @@ public class SSVD implements Serializable {
 		// PCAUtils.printMatrixToFile(GaussianRandomMatrix, OutputFormat.DENSE,
 		// outputPath+File.separator+"Seed");
 		Matrix B = PCAUtils.convertSparkToMahoutMatrix(GaussianRandomMatrix);
+
 		
-		System.out.println(PCAUtils.convertMahoutToSparkMatrix(centralC));
-		Matrix V = new org.apache.mahout.math.SingularValueDecomposition(centralC).getU();
 
 		org.apache.mahout.math.SingularValueDecomposition SVD = null;
 
@@ -802,7 +681,7 @@ public class SSVD implements Serializable {
 			B = B.transpose();
 
 			Double newS = SVD.getS().getQuick(nPCs - 1, nPCs - 1);
-			newS = Math.round(newS * 10000.0) / 10000.0;
+			newS = Math.round(newS * 1000.0) / 1000.0;
 			if (newS == S)
 				break;
 			else
