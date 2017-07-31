@@ -1,13 +1,4 @@
-/**
- * QCRI, sPCA LICENSE
- * sPCA is a scalable implementation of Principal Component Analysis (PCA) on of Spark and MapReduce
- *
- * Copyright (c) 2015, Qatar Foundation for Education, Science and Community Development (on
- * behalf of Qatar Computing Research Institute) having its principle place of business in Doha,
- * Qatar with the registered address P.O box 5825 Doha, Qatar (hereinafter referred to as "QCRI")
- *
-*/
-package org.qcri.sparkpca;
+package org.buet.scalablepca;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -41,18 +32,14 @@ import org.apache.spark.mllib.linalg.SparseVector;
 import org.apache.spark.mllib.linalg.Vectors;
 import org.apache.spark.mllib.linalg.distributed.RowMatrix;
 import org.apache.spark.storage.StorageLevel;
-import org.qcri.sparkpca.FileFormat.OutputFormat;
+import org.buet.scalablepca.FileFormat.OutputFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import scala.Tuple2;
 
 /**
- * This code provides an implementation of PPCA: Probabilistic Principal
- * Component Analysis based on the paper from Tipping and Bishop:
- * 
- * sPCA: PPCA on top of Spark
- * 
+ * This code provides an implementation of Scalable SVD mentioned in the paper
  * 
  * @author Mehrab Tanjim
  * 
@@ -210,7 +197,7 @@ public class SSVD implements Serializable {
 		}
 
 		// Setting Spark configuration parameters
-		SparkConf conf = new SparkConf().setAppName("SSVD").setMaster("local[*]");//
+		SparkConf conf = new SparkConf().setAppName("QRMod1").setMaster("local[*]");//
 		// TODO
 		// remove
 		// this
@@ -244,9 +231,8 @@ public class SSVD implements Serializable {
 	 *            Number of columns in input Matrix
 	 * @param nPCs
 	 *            Number of desired principal components
-	 * @param errRate
-	 *            The sampling rate that is used for computing the
-	 *            reconstruction error
+	 * @param tolerance
+	 *            The stop condition
 	 * @param maxIterations
 	 *            Maximum number of iterations before terminating
 	 * @return Matrix of size nCols X nPCs having the desired principal
@@ -328,7 +314,7 @@ public class SSVD implements Serializable {
 
 		stat.totalRunTime = stat.preprocessTime;
 
-		stat.appName = "SSVD";
+		stat.appName = "QRMod1";
 		stat.dataSet = dataset;
 		stat.nRows = nRows;
 		stat.nCols = nCols;
@@ -337,12 +323,12 @@ public class SSVD implements Serializable {
 		computePrincipalComponents(sc, vectors, br_ym_mahout, meanVector, outputPath, nRows, nCols, nPCs,
 				subsample, tolerance, k_plus_one_singular_value, q, maxIterations, calculateError, subsampleNorm);
 
-		// count the average ppca runtime
+		// count the average sketch runtime
 
-		for (int j = 0; j < stat.ppcaIterTime.size(); j++) {
-			stat.avgppcaIterTime += stat.ppcaIterTime.get(j);
+		for (int j = 0; j < stat.sketchTime.size(); j++) {
+			stat.avgSketchTime += stat.sketchTime.get(j);
 		}
-		stat.avgppcaIterTime /= stat.ppcaIterTime.size();
+		stat.avgSketchTime /= stat.sketchTime.size();
 
 		// save statistics
 		PCAUtils.printStatToFile(stat, outputPath);
@@ -350,32 +336,7 @@ public class SSVD implements Serializable {
 		return null;
 	}
 
-	/**
-	 * Compute principal component analysis where the input is an
-	 * RDD<org.apache.spark.mllib.linalg.Vector> of vectors such that each
-	 * vector represents a row in the matrix
-	 * 
-	 * @param sc
-	 *            Spark context that contains the configuration parameters and
-	 *            represents connection to the cluster (used to create RDDs,
-	 *            accumulators and broadcast variables on that cluster)
-	 * @param vectors
-	 *            An RDD of vectors representing the rows of the input matrix
-	 * @param nRows
-	 *            Number of rows in input Matrix
-	 * @param nCols
-	 *            Number of columns in input Matrix
-	 * @param nPCs
-	 *            Number of desired principal components
-	 * @param errRate
-	 *            The sampling rate that is used for computing the
-	 *            reconstruction error
-	 * @param maxIterations
-	 *            Maximum number of iterations before terminating
-	 * @return Matrix of size nCols X nPCs having the desired principal
-	 *         components
-	 * @throws FileNotFoundException
-	 */
+	
 	public static org.apache.spark.mllib.linalg.Matrix computePrincipalComponents(JavaSparkContext sc,
 			JavaRDD<org.apache.spark.mllib.linalg.Vector> vectors, final Broadcast<Vector> br_ym_mahout,
 			final Vector meanVector,  String outputPath, final int nRows, final int nCols, final int nPCs,
@@ -417,7 +378,7 @@ public class SSVD implements Serializable {
 		// OutputFormat.DENSE, outputPath+File.separator+"Seed");
 
 		final int s=nPCs+subsample;
-		// Broadcast Y2X because it will be used in several jobs and several
+		// Broadcast Seed because it will be used in several jobs and several
 		// iterations.
 		Matrix V=null;
 		double spectral_error,error,prevError=tolerance+1;
@@ -595,8 +556,9 @@ public class SSVD implements Serializable {
 			
 			endTime = System.currentTimeMillis();
 			totalTime = endTime - startTime;
-			stat.sketchTime = (double) totalTime / 1000.0;
-			stat.totalRunTime += stat.sketchTime;
+			double time= (double) totalTime / 1000.0;
+			stat.sketchTime.add(time);
+			stat.totalRunTime += time;
 			
 			if (calculateError == 1) {
 				// log.info("Computing the error at round " + round + " ...");
@@ -613,7 +575,6 @@ public class SSVD implements Serializable {
 				prevError = error;
 			}
 			
-			//if(dw<=tolerance) break;
 			/**
 			 * reinitialize
 			 */
@@ -665,38 +626,38 @@ public class SSVD implements Serializable {
 
 
 			final int s=nPCs+subsample;
-			// Broadcast Y2X because it will be used in several jobs and several
+			// Broadcast Seed because it will be used in several jobs and several
 			// iterations.
 			final Broadcast<Matrix> br_Seed = sc.broadcast(Seed);
 
-			// Xm = Ym * Y2X
+			// Zm = Ym * Seed
 			Vector zm_mahout = new DenseVector(s);
 			zm_mahout = PCAUtils.denseVectorTimesMatrix(br_ym_mahout.value(), Seed, zm_mahout);
 
-			// Broadcast Xm because it will be used in several iterations.
+			// Broadcast Zm because it will be used in several iterations.
 			final Broadcast<Vector> br_zm_mahout = sc.broadcast(zm_mahout);
-			// We skip computing X as we generate it on demand using Y and Y2X
+			// We skip computing Z as we generate it on demand using Y and Seed
 
-			// 3. X'X and Y'X Job: The job computes the two matrices X'X and Y'X
+			// 3. Z'Z and Y'Z Job: The job computes the two matrices Z'Z and Y'Z
 			/**
-			 * Xc = Yc * MEM (MEM is the in-memory broadcasted matrix Y2X)
+			 * Zc = Yc * MEM (MEM is the in-memory broadcasted matrix seed)
 			 * 
-			 * XtX = Xc' * Xc
+			 * ZtZ = Zc' * Zc
 			 * 
-			 * YtX = Yc' * Xc
+			 * YtZ = Yc' * Zc
 			 * 
 			 * It also considers that Y is sparse and receives the mean vectors Ym
 			 * and Xm separately.
 			 * 
 			 * Yc = Y - Ym
 			 * 
-			 * Xc = X - Xm
+			 * Zc = Z - Zm
 			 * 
-			 * Xc = (Y - Ym) * MEM = Y * MEM - Ym * MEM = X - Xm
+			 * Zc = (Y - Ym) * MEM = Y * MEM - Ym * MEM = Z - Zm
 			 * 
-			 * XtX = (X - Xm)' * (X - Xm)
+			 * ZtZ = (Z - Zm)' * (Z - Zm)
 			 * 
-			 * YtX = (Y - Ym)' * (X - Xm)
+			 * YtZ = (Y - Ym)' * (Z - Zm)
 			 * 
 			 */
 			final Accumulator<double[][]> matrixAccumZtZ = sc.accumulator(new double[s][s],
@@ -728,7 +689,7 @@ public class SSVD implements Serializable {
 						yi = arg0.next();
 
 						/*
-						 * Perform in-memory matrix multiplication xi = yi' * Y2X
+						 * Perform in-memory matrix multiplication zi = yi' * Seed
 						 */
 						PCAUtils.sparseVectorTimesMatrix(yi, br_Seed.value(), resArrayZ);
 
@@ -764,7 +725,7 @@ public class SSVD implements Serializable {
 					matrixAccumYtZ.add(internalSumYtZ);
 				}
 
-			});// end X'X and Y'X Job
+			});// end Z'Z and Y'Z Job
 
 			/*
 			 * Get the values of the accumulators.
@@ -773,14 +734,7 @@ public class SSVD implements Serializable {
 			Matrix centralZtZ = new DenseMatrix(matrixAccumZtZ.value());
 			Vector centralSumZ = new DenseVector(matrixAccumZ.value());
 
-			/*
-			 * Mi = (Yi-Ym)' x (Xi-Xm) = Yi' x (Xi-Xm) - Ym' x (Xi-Xm)
-			 * 
-			 * M = Sum(Mi) = Sum(Yi' x (Xi-Xm)) - Ym' x (Sum(Xi)-N*Xm)
-			 * 
-			 * The first part is done in the previous job and the second in the
-			 * following method
-			 */
+			
 			centralYtZ = PCAUtils.updateXtXAndYtx(centralYtZ, centralSumZ, br_ym_mahout.value(), zm_mahout, nRows);
 			centralZtZ = PCAUtils.updateXtXAndYtx(centralZtZ, centralSumZ, zm_mahout, zm_mahout, nRows);
 

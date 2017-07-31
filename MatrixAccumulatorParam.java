@@ -8,7 +8,7 @@
  *
 */
 
-package org.qcri.sparkpca;
+package org.buet.scalablepca;
 
 import org.apache.spark.AccumulatorParam;
 

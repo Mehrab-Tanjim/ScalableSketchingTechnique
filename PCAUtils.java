@@ -1,14 +1,4 @@
-/**
- * QCRI, sPCA LICENSE
- * sPCA is a scalable implementation of Principal Component Analysis (PCA) on of Spark and MapReduce
- *
- * Copyright (c) 2015, Qatar Foundation for Education, Science and Community Development (on
- * behalf of Qatar Computing Research Institute) having its principle place of business in Doha,
- * Qatar with the registered address P.O box 5825 Doha, Qatar (hereinafter referred to as "QCRI")
- *
-*/
-
-package org.qcri.sparkpca;
+package org.buet.scalablepca;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -28,7 +18,7 @@ import org.apache.mahout.math.function.DoubleFunction;
 import org.apache.spark.mllib.linalg.Matrices;
 import org.apache.spark.mllib.linalg.SparseVector;
 import org.apache.spark.mllib.linalg.Vectors;
-import org.qcri.sparkpca.FileFormat.OutputFormat;
+import org.buet.scalablepca.FileFormat.OutputFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,15 +26,8 @@ import com.esotericsoftware.minlog.Log;
 
 import scala.Tuple2;
 
-
-/**
- * This class includes the utility functions that is used by PCA algorithm
- * 
- * 
- * @author Tarek Elgamal
- */
 class PCAUtils {
-	 private final static Logger log = LoggerFactory.getLogger(PragmaticPPCA.class);
+	// private final static Logger log = LoggerFactory.getLogger(SSVD.class);
 	
 	/**
 	 * We use a single random object to help reproducing the erroneous scenarios
@@ -573,14 +556,13 @@ class PCAUtils {
 			String datadimensions="Dimensions: Rows: "+stat.nRows+" Cols: "+stat.nCols;
 			String runtime="Total Runtime: "+stat.totalRunTime;
 			String preprocesstime="Preprocess Time: "+stat.preprocessTime;
-			String sketchtime="Sketch Time: "+stat.sketchTime;
-			String avgppcatime="Average PPCA Time: "+stat.avgppcaIterTime;
-			String ppcaruntime="PPCA each iteration time: [";
-			for(int i=0;i<stat.ppcaIterTime.size()-1;i++){
-				ppcaruntime+=stat.ppcaIterTime.get(i)+", ";
+			String avgsketchtime="Average PPCA Time: "+stat.avgSketchTime;			
+			String sketchruntime="Sketch each iteration time: [";
+			for(int i=0;i<stat.sketchTime.size()-1;i++){
+				sketchruntime+=stat.sketchTime.get(i)+", ";
 			}
-			if(!stat.ppcaIterTime.isEmpty())
-				ppcaruntime+=stat.ppcaIterTime.get(stat.ppcaIterTime.size()-1)+"]";
+			if(!stat.sketchTime.isEmpty())
+				sketchruntime+=stat.sketchTime.get(stat.sketchTime.size()-1)+"]";
 			
 			String iteration="Total Iterations: "+stat.nIter;
 			String error="Errors in each iteration: [";
@@ -597,10 +579,11 @@ class PCAUtils {
 			    out.append("\n"+datadimensions);
 			    out.append("\n"+runtime);
 			    out.append("\n"+preprocesstime);
-			    out.append("\n"+sketchtime);
-			    out.append("\n"+avgppcatime);
-			    out.append("\n"+ppcaruntime);
+			    out.append("\n"+avgsketchtime);
+			    out.append("\n"+sketchruntime);
 			    out.append("\n"+iteration);
+			    if(stat.kSingularValue!=0)
+			    	out.append("\n"+"K Singular Value"+stat.kSingularValue);
 			    out.append("\n"+error);
 			    out.append("\n"+"******");
 			    out.close();
@@ -612,10 +595,11 @@ class PCAUtils {
 			    out.println(datadimensions);
 			    out.println(runtime);
 			    out.println(preprocesstime);
-			    out.println(sketchtime);
-			    out.println(avgppcatime);
-			    out.println(ppcaruntime);
+			    out.println(avgsketchtime);
+			    out.println(sketchruntime);
 			    out.println(iteration);
+			    if(stat.kSingularValue!=0)
+			    	out.println("\n"+"K Singular Value"+stat.kSingularValue);
 			    out.println(error);
 			    out.append("******");
 			    out.close();

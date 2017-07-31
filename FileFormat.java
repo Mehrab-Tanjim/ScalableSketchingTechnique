@@ -1,15 +1,4 @@
-/**
- * QCRI, sPCA LICENSE
- * sPCA is a scalable implementation of Principal Component Analysis (PCA) on of Spark and MapReduce
- *
- * Copyright (c) 2015, Qatar Foundation for Education, Science and Community Development (on
- * behalf of Qatar Computing Research Institute) having its principle place of business in Doha,
- * Qatar with the registered address P.O box 5825 Doha, Qatar (hereinafter referred to as "QCRI")
- *
-*/
-
-
-package org.qcri.sparkpca;
+package org.buet.scalablepca;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -27,14 +16,6 @@ import org.apache.mahout.math.VectorWritable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * This class converts other input formats to sequence file format. The input formats supported are
- *  Dense Matrix Format: We refer to this format as DENSE. DENSE stores one line for each row and the values in each row are separated by white spaces. The input can be one file or a directory with multiple files.
- *  Coordinate List Format: We refer to this format as COO. COO stores a list of (row, column, value) tuples. The indices are sorted by row index then column index. The input can be one file or a directory with multiple files.
- * 
- * @author Tarek Elgamal
- *
- */
 
 public class FileFormat {
 	 private final static Logger log = LoggerFactory.getLogger(FileFormat.class);
